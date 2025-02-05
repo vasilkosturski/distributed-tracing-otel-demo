@@ -1,0 +1,87 @@
+from flask import Flask, request, jsonify
+from kafka import KafkaProducer
+import psycopg2
+import json
+import uuid
+from opentelemetry import trace
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.kafka import KafkaInstrumentor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Instrument Flask, Psycopg2 (PostgreSQL), and Kafka
+FlaskInstrumentor().instrument_app(app)
+Psycopg2Instrumentor().instrument()
+KafkaInstrumentor().instrument()
+
+# Configure OpenTelemetry tracing
+trace.set_tracer_provider(
+    TracerProvider(
+        resource=Resource.create({SERVICE_NAME: "order_service"})
+    )
+)
+jaeger_exporter = JaegerExporter(
+    agent_host_name='localhost',
+    agent_port=6831,
+)
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(jaeger_exporter)
+)
+
+tracer = trace.get_tracer(__name__)
+
+# Database connection
+def get_db_connection():
+    return psycopg2.connect(
+        dbname='orders_db', user='postgres', password='password', host='localhost'
+    )
+
+# Kafka producer
+producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
+@app.route('/orders', methods=['POST'])
+def create_order():
+    data = request.json
+    order_id = str(uuid.uuid4())
+    customer_id = data.get('customer_id')
+    status = 'CREATED'
+
+    with tracer.start_as_current_span("create_order"):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Insert order into PostgreSQL
+            cursor.execute(
+                "INSERT INTO orders (id, customer_id, status) VALUES (%s, %s, %s)",
+                (order_id, customer_id, status)
+            )
+            conn.commit()
+
+            # Publish event to Kafka
+            event = {
+                'order_id': order_id,
+                'customer_id': customer_id,
+                'status': status
+            }
+            producer.send('OrderCreated', event)
+            producer.flush()
+
+            return jsonify({'order_id': order_id, 'status': status}), 201
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': str(e)}), 500
+        finally:
+            cursor.close()
+            conn.close()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
