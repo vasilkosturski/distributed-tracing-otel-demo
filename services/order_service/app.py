@@ -7,7 +7,7 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
 from opentelemetry.instrumentation.kafka import KafkaInstrumentor
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -26,12 +26,9 @@ trace.set_tracer_provider(
         resource=Resource.create({SERVICE_NAME: "order_service"})
     )
 )
-jaeger_exporter = JaegerExporter(
-    agent_host_name='localhost',
-    agent_port=6831,
-)
+otlp_exporter = OTLPSpanExporter(endpoint="localhost:4317", insecure=True)
 trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(jaeger_exporter)
+    BatchSpanProcessor(otlp_exporter)
 )
 
 tracer = trace.get_tracer(__name__)
@@ -53,6 +50,8 @@ def create_order():
     data = request.json
     order_id = str(uuid.uuid4())
     customer_id = data.get('customer_id')
+    product_id = data.get('product_id')
+    quantity = data.get('quantity')
     status = 'CREATED'
 
     with tracer.start_as_current_span("create_order"):
@@ -61,8 +60,8 @@ def create_order():
         try:
             # Insert order into PostgreSQL
             cursor.execute(
-                "INSERT INTO orders (id, customer_id, status) VALUES (%s, %s, %s)",
-                (order_id, customer_id, status)
+                "INSERT INTO orders (id, customer_id, product_id, quantity, status) VALUES (%s, %s, %s, %s, %s)",
+                (order_id, customer_id, product_id, quantity, status)
             )
             conn.commit()
 
@@ -70,6 +69,8 @@ def create_order():
             event = {
                 'order_id': order_id,
                 'customer_id': customer_id,
+                'product_id': product_id,
+                'quantity': quantity,
                 'status': status
             }
             producer.send('OrderCreated', event)

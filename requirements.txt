@@ -1,6 +1,7 @@
 flask~=3.1.0
 kafka-python~=2.0.2
 psycopg2-binary~=2.9.10
+psycopg2~=2.9.10
 
 # OpenTelemetry SDK and Instrumentations
 opentelemetry-api~=1.24.0
@@ -10,5 +11,5 @@ opentelemetry-instrumentation-flask~=0.44b0
 opentelemetry-instrumentation-psycopg2~=0.44b0
 opentelemetry-instrumentation-kafka-python~=0.44b0
 
-# Jaeger Exporter for OpenTelemetry
-opentelemetry-exporter-jaeger~=1.21.0
+# OpenTelemetry Exporter
+opentelemetry-exporter-otlp~=1.24.0
