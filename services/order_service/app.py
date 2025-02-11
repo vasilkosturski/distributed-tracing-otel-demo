@@ -12,41 +12,31 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# Instrument Flask, PostgreSQL, and Kafka
-FlaskInstrumentor().instrument_app(app)
-Psycopg2Instrumentor().instrument()
-KafkaInstrumentor().instrument()
-
-# Configure OpenTelemetry tracing
 trace.set_tracer_provider(
-    TracerProvider(
-        resource=Resource.create({SERVICE_NAME: "order_service"})
-    )
+    TracerProvider(resource=Resource.create({SERVICE_NAME: "order_service"}))
 )
 otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
 trace.get_tracer_provider().add_span_processor(
     BatchSpanProcessor(otlp_exporter)
 )
-
 tracer = trace.get_tracer(__name__)
 
-# Database connection
 def get_db_connection():
     return psycopg2.connect(
         dbname='orders_db', user='postgres', password='password', host='localhost'
     )
 
-# Kafka producer
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
+def get_kafka_producer():
+    return KafkaProducer(
+        bootstrap_servers='localhost:9092',
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
 
 @app.route('/orders', methods=['POST'])
-def create_order():
+def handle_order():
+    producer = get_kafka_producer()
     data = request.json
     order_id = str(uuid.uuid4())
     customer_id = data.get('customer_id')
@@ -58,14 +48,12 @@ def create_order():
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # Insert order into PostgreSQL
             cursor.execute(
                 "INSERT INTO orders (id, customer_id, product_id, quantity, status) VALUES (%s, %s, %s, %s, %s)",
                 (order_id, customer_id, product_id, quantity, status)
             )
             conn.commit()
 
-            # Publish event to Kafka
             event = {
                 'order_id': order_id,
                 'customer_id': customer_id,
@@ -85,4 +73,7 @@ def create_order():
             conn.close()
 
 if __name__ == '__main__':
+    FlaskInstrumentor().instrument_app(app)
+    Psycopg2Instrumentor().instrument()
+    KafkaInstrumentor().instrument()
     app.run(host='0.0.0.0', port=5000)
