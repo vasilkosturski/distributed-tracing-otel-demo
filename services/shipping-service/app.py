@@ -8,7 +8,6 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# Configure tracing once during service startup
 trace.set_tracer_provider(
     TracerProvider(resource=Resource.create({SERVICE_NAME: "shipping_service"}))
 )
@@ -18,7 +17,6 @@ trace.get_tracer_provider().add_span_processor(
 )
 tracer = trace.get_tracer(__name__)
 
-# Kafka Consumer to listen for OrderCreated events
 def get_kafka_consumer():
     return KafkaConsumer(
         'OrderCreated',
@@ -27,7 +25,6 @@ def get_kafka_consumer():
         group_id='shipping-service-group'
     )
 
-# Kafka Producer to emit PackagingCompleted events
 def get_kafka_producer():
     return KafkaProducer(
         bootstrap_servers='localhost:9092',
@@ -48,7 +45,6 @@ def process_orders():
             print(f"Processing order {order_id}...")
             time.sleep(2)  # Simulate packaging delay
 
-            # Emit PackagingCompleted event
             packaging_completed_event = {
                 'order_id': order_id,
                 'status': 'PACKAGED'
