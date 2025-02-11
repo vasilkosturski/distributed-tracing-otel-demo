@@ -46,8 +46,7 @@ def process_orders():
             time.sleep(2)  # Simulate packaging delay
 
             packaging_completed_event = {
-                'order_id': order_id,
-                'status': 'PACKAGED'
+                'order_id': order_id
             }
             producer.send('PackagingCompleted', packaging_completed_event)
             producer.flush()
