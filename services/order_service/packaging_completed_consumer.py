@@ -11,7 +11,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 # Tracing setup
 trace.set_tracer_provider(
-    TracerProvider(resource=Resource.create({SERVICE_NAME: "order_consumer_service"}))
+    TracerProvider(resource=Resource.create({SERVICE_NAME: "order_service"}))
 )
 otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
 trace.get_tracer_provider().add_span_processor(
