@@ -46,28 +46,26 @@ def process_orders():
         headers = {key: value.decode('utf-8') for key, value in message.headers}
         ctx = TraceContextTextMapPropagator().extract(headers)
 
-        # ✅ Start a new span for "OrderCreated receive" using the extracted context
-        with tracer.start_as_current_span("OrderCreated receive", context=ctx) as consumer_span:
-            current_span = trace.get_current_span()
-            print(f"🛠 DEBUG: Active Span (should be OrderCreated receive): {current_span.get_span_context()}")
+        # ✅ Use the extracted context so that the correct span is set
+        with trace.use_span(trace.get_current_span(), end_on_exit=False):
+            consumer_span = trace.get_current_span()
+            print(f"🛠 DEBUG: Active Span (should be OrderCreated receive): {consumer_span.get_span_context()}")
 
-            # ✅ Now "process_order_shipping" should correctly be a child of "OrderCreated receive"
+            # ✅ Ensure "process_order_shipping" is a child of "OrderCreated receive"
             with tracer.start_as_current_span(
                 "process_order_shipping",
-                context=trace.set_span_in_context(consumer_span),
+                context=ctx,  # ✅ Use extracted context
                 attributes={"order_id": order_id}
             ):
                 print(f"Processing order {order_id}...")
                 time.sleep(2)  # Simulate packaging delay
 
-                packaging_completed_event = {'order_id': order_id}
-
-                # ✅ Inject trace context into Kafka headers for next service
+                # Inject trace context into Kafka headers
                 new_headers = {}
                 TraceContextTextMapPropagator().inject(new_headers)
                 kafka_headers = [(k, v.encode('utf-8')) for k, v in new_headers.items()]
 
-                producer.send('PackagingCompleted', value=packaging_completed_event, headers=kafka_headers)
+                producer.send('PackagingCompleted', value={'order_id': order_id}, headers=kafka_headers)
                 producer.flush()
 
                 print(f"Packaging completed for order {order_id}")
