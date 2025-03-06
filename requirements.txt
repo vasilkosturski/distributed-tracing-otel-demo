@@ -4,12 +4,12 @@ psycopg2-binary~=2.9.10
 psycopg2~=2.9.10
 
 # OpenTelemetry SDK and Instrumentations
-opentelemetry-api~=1.24.0
-opentelemetry-sdk~=1.24.0
-opentelemetry-instrumentation~=0.44b0
-opentelemetry-instrumentation-flask~=0.44b0
-opentelemetry-instrumentation-psycopg2~=0.44b0
-opentelemetry-instrumentation-kafka-python~=0.44b0
+opentelemetry-api~=1.30.0
+opentelemetry-sdk~=1.30.0
+opentelemetry-instrumentation~=0.49b0
+opentelemetry-instrumentation-flask~=0.49b0
+opentelemetry-instrumentation-psycopg2~=0.49b0
+opentelemetry-instrumentation-kafka-python~=0.49b0
 
 # OpenTelemetry Exporter
-opentelemetry-exporter-otlp~=1.24.0
+opentelemetry-exporter-otlp~=1.30.0

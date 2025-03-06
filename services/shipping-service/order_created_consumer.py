@@ -7,7 +7,9 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+# Initialize tracing
 trace.set_tracer_provider(
     TracerProvider(resource=Resource.create({SERVICE_NAME: "shipping_service"}))
 )
@@ -16,23 +18,21 @@ trace.get_tracer_provider().add_span_processor(
     BatchSpanProcessor(otlp_exporter)
 )
 tracer = trace.get_tracer(__name__)
+propagator = TraceContextTextMapPropagator()
 
-def consume_hook(span, record, args, kwargs):
+def extract_trace_context(kafka_headers):
     """
-    Hook that runs when KafkaInstrumentation creates the 'receive' span.
-    We use it to ensure the 'process' span is a child of 'receive'.
+    Extracts the tracing context from Kafka headers.
     """
-    if span and span.is_recording():
-        order_event = record.value  # ✅ FIXED: record.value is already a dictionary
-        order_id = order_event.get('order_id')
-
-        # ✅ Run "process" inside "receive" so it becomes its child
-        with trace.use_span(span, end_on_exit=False):
-            with tracer.start_as_current_span("OrderCreated process"):
-                print(f"Processing order {order_id}...")
-                time.sleep(2)  # Simulate processing delay
+    if kafka_headers:
+        carrier = {key: value.decode("utf-8") for key, value in kafka_headers if isinstance(value, bytes)}
+        return propagator.extract(carrier)
+    return trace.INVALID_SPAN_CONTEXT  # Fallback to an invalid span context if no headers exist
 
 def get_kafka_consumer():
+    """
+    Returns a configured Kafka consumer.
+    """
     return KafkaConsumer(
         'OrderCreated',
         bootstrap_servers='localhost:9092',
@@ -41,12 +41,17 @@ def get_kafka_consumer():
     )
 
 if __name__ == '__main__':
-    # ✅ Instrument Kafka with the consume hook
-    KafkaInstrumentor().instrument(consume_hook=consume_hook)
+    KafkaInstrumentor().instrument()
 
     consumer = get_kafka_consumer()
     print("Shipping Service is running and listening for OrderCreated events...")
 
     for message in consumer:
-        # ✅ We do not need to manually extract context or create spans here
-        pass  # The consume_hook handles processing inside the correct span
+        context = extract_trace_context(message.headers)
+
+        with tracer.start_as_current_span("process_order", context=context):
+            order_event = message.value
+            order_id = order_event.get('order_id')
+
+            print(f"Processing order {order_id}...")
+            time.sleep(2)
