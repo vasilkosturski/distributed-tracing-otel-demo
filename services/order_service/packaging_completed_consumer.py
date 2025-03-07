@@ -8,8 +8,10 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-# Tracing setup
+# Initialize tracing
 trace.set_tracer_provider(
     TracerProvider(resource=Resource.create({SERVICE_NAME: "order_service"}))
 )
@@ -18,6 +20,7 @@ trace.get_tracer_provider().add_span_processor(
     BatchSpanProcessor(otlp_exporter)
 )
 tracer = trace.get_tracer(__name__)
+propagator = TraceContextTextMapPropagator()
 
 # Kafka Consumer
 def get_kafka_consumer():
@@ -34,16 +37,33 @@ def get_db_connection():
         dbname='orders_db', user='postgres', password='password', host='localhost'
     )
 
+# Extract trace context from Kafka headers
+def extract_trace_context(kafka_headers):
+    carrier = {key: value.decode("utf-8") for key, value in kafka_headers if isinstance(value, bytes)}
+    return propagator.extract(carrier)
+
 # Processing PackagingCompleted events
 def process_packaging_completed():
     consumer = get_kafka_consumer()
     print("Order Consumer Service is listening for PackagingCompleted events...")
 
     for message in consumer:
+        context = extract_trace_context(message.headers)
         event = message.value
         order_id = event.get('order_id')
 
-        with tracer.start_as_current_span("update_order_status", attributes={"order_id": order_id}):
+        with tracer.start_as_current_span(
+            "PackagingCompleted process",
+            context=context,
+            kind=SpanKind.CONSUMER,
+            attributes={
+                "messaging.system": "kafka",
+                "messaging.destination.name": "PackagingCompleted",
+                "messaging.kafka.partition": message.partition,
+                "messaging.message.id": message.offset,
+                "order.id": order_id
+            }
+        ) as span:
             conn = get_db_connection()
             cursor = conn.cursor()
             try:
