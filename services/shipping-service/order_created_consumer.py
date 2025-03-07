@@ -7,6 +7,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 # Initialize tracing
@@ -21,18 +22,12 @@ tracer = trace.get_tracer(__name__)
 propagator = TraceContextTextMapPropagator()
 
 def extract_trace_context(kafka_headers):
-    """
-    Extracts the tracing context from Kafka headers.
-    """
     if kafka_headers:
         carrier = {key: value.decode("utf-8") for key, value in kafka_headers if isinstance(value, bytes)}
         return propagator.extract(carrier)
     return trace.INVALID_SPAN_CONTEXT  # Fallback to an invalid span context if no headers exist
 
 def get_kafka_consumer():
-    """
-    Returns a configured Kafka consumer.
-    """
     return KafkaConsumer(
         'OrderCreated',
         bootstrap_servers='localhost:9092',
@@ -49,7 +44,17 @@ if __name__ == '__main__':
     for message in consumer:
         context = extract_trace_context(message.headers)
 
-        with tracer.start_as_current_span("process_order", context=context):
+        with tracer.start_as_current_span(
+                "OrderCreated process",
+                context=context,
+                kind=SpanKind.CONSUMER,
+                attributes={
+                    "messaging.system": "kafka",
+                    "messaging.destination.name": "OrderCreated",
+                    "messaging.kafka.partition": message.partition,
+                    "messaging.message.id": message.offset
+                }
+        ) as span:
             order_event = message.value
             order_id = order_event.get('order_id')
 
