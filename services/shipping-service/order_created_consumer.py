@@ -65,7 +65,6 @@ if __name__ == '__main__':
                     "order.id": order_event.get('order_id')
                 }
         ) as span:
-
             print(f"Processing order {order_id}...")
 
             time.sleep(1)
@@ -75,13 +74,7 @@ if __name__ == '__main__':
                 "status": "PACKAGED"
             }
 
-            headers = []
-            carrier = {}
-            propagator.inject(carrier)
-            for key, value in carrier.items():
-                headers.append((key, value.encode('utf-8')))
-
-            producer.send('PackagingCompleted', value=packaging_event, headers=headers)
+            producer.send('PackagingCompleted', value=packaging_event)
             producer.flush()
 
             print(f"Published PackagingCompleted event for order {order_id}")
