@@ -8,9 +8,9 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Directly set OTLP exporter configuration
-OTLP_ENDPOINT = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp"
-OTLP_HEADERS = {"Authorization": "Basic glc_eyJvIjoiMTM3MzU3OCIsIm4iOiJzdGFjay0xMTk3MTY3LW90bHAtd3JpdGUtbXktb3RscC1hY2Nlc3MtdG9rZW4iLCJrIjoicXZYaDNGOGg1cVY2eTJSM29wNzY4NmdNIiwibSI6eyJyIjoicHJvZC1ldS13ZXN0LTIifX0="}
+# Corrected OTLP Endpoint
+OTLP_ENDPOINT = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces"
+OTLP_HEADERS = {"Authorization": "Basic%20glc_eyJvIjoiMTM3MzU3OCIsIm4iOiJzdGFjay0xMTk3MTY3LW90bHAtd3JpdGUtbXktb3RscC1hY2Nlc3MtdG9rZW4iLCJrIjoicXZYaDNGOGg1cVY2eTJSM29wNzY4NmdNIiwibSI6eyJyIjoicHJvZC1ldS13ZXN0LTIifX0="}
 
 # Log the OTLP configuration
 logger.info(f"OTLP Endpoint: {OTLP_ENDPOINT}")
