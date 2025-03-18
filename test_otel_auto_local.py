@@ -1,4 +1,7 @@
+import logging
 import requests
+
+logging.basicConfig(level=logging.DEBUG)
 
 def make_requests():
     url = "https://httpbin.org/get"  # Public API for testing
