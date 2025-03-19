@@ -1,10 +1,10 @@
 import logging
 import requests
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig()
 
 def make_requests():
-    url = "https://httpbin.org/get"  # Public API for testing
+    url = "https://httpbin.org/get"
     for i in range(5):
         response = requests.get(url)
         print(f"Request {i+1}: {response.status_code} - {response.json()}")
