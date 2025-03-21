@@ -1,24 +1,29 @@
 from kafka import KafkaConsumer
 import psycopg2
 import json
+import os
 from opentelemetry import trace
 from opentelemetry.instrumentation.kafka import KafkaInstrumentor
 from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+# Read Grafana Cloud OTLP headers from env var
+OTLP_HEADERS = os.getenv("OTEL_EXPORTER_OTLP_HEADERS")
+
 # Initialize tracing
 trace.set_tracer_provider(
-    TracerProvider(resource=Resource.create({SERVICE_NAME: "order_service"}))
+    TracerProvider(resource=Resource.create({"service.name": "order_service"}))
 )
-otlp_exporter = OTLPSpanExporter(endpoint="localhost:4317", insecure=True)
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(otlp_exporter)
+otlp_exporter = OTLPSpanExporter(
+    endpoint="https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces",
+    headers=dict([OTLP_HEADERS.split("=", 1)]) if OTLP_HEADERS else {},
 )
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
 tracer = trace.get_tracer(__name__)
 propagator = TraceContextTextMapPropagator()
 
@@ -63,7 +68,7 @@ def process_packaging_completed():
                 "messaging.message.id": message.offset,
                 "order.id": order_id
             }
-        ) as span:
+        ) as _:
             conn = get_db_connection()
             cursor = conn.cursor()
             try:

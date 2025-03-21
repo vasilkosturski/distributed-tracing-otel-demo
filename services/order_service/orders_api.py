@@ -1,34 +1,48 @@
-from flask import Flask, request, jsonify
-from kafka import KafkaProducer
-import psycopg2
+import os
 import json
 import uuid
+import psycopg2
+from flask import Flask, request, jsonify
+from kafka import KafkaProducer
 from opentelemetry import trace
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
 from opentelemetry.instrumentation.kafka import KafkaInstrumentor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+# Flask App Initialization
 app = Flask(__name__)
 
+# Read OTLP Headers from Environment
+OTLP_HEADERS = os.getenv("OTEL_EXPORTER_OTLP_HEADERS")
+
+# Set up OpenTelemetry Tracer with service name
+SERVICE_NAME = "order_service"
 trace.set_tracer_provider(
-    TracerProvider(resource=Resource.create({SERVICE_NAME: "order_service"}))
-)
-otlp_exporter = OTLPSpanExporter(endpoint="localhost:4317", insecure=True)
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(otlp_exporter)
+    TracerProvider(resource=Resource.create({"service.name": SERVICE_NAME}))
 )
 tracer = trace.get_tracer(__name__)
 
+# Configure OTLP HTTP Exporter for Grafana Cloud
+otlp_exporter = OTLPSpanExporter(
+    endpoint="https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces",
+    headers=dict([OTLP_HEADERS.split("=", 1)]) if OTLP_HEADERS else {},
+)
+
+# Attach Exporter to Provider
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
+
 def get_db_connection():
+    """Returns a PostgreSQL database connection"""
     return psycopg2.connect(
         dbname='orders_db', user='postgres', password='password', host='localhost'
     )
 
 def get_kafka_producer():
+    """Returns a Kafka producer"""
     return KafkaProducer(
         bootstrap_servers='localhost:9092',
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -36,6 +50,7 @@ def get_kafka_producer():
 
 @app.route('/orders', methods=['POST'])
 def handle_order():
+    """Handles order creation, inserts into DB, and sends an event to Kafka"""
     producer = get_kafka_producer()
     data = request.json
     order_id = str(uuid.uuid4())
