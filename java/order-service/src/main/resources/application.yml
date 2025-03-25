@@ -2,14 +2,13 @@ server:
   port: 8080
 
 spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orders_db
+    username: postgres
+    password: password
+    driver-class-name: org.postgresql.Driver
   kafka:
     bootstrap-servers: localhost:9092
-    consumer:
-      group-id: order-service
-      auto-offset-reset: earliest
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 otel:
   exporter:
