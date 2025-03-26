@@ -46,14 +46,19 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
-        <!-- OpenTelemetry core + Jaeger exporter -->
+        <!-- OpenTelemetry core + exporter -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-sdk</artifactId>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-jaeger</artifactId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.semconv</groupId>
+            <artifactId>opentelemetry-semconv</artifactId>
+            <version>1.30.0</version>
         </dependency>
 
         <!-- JSON serialization -->

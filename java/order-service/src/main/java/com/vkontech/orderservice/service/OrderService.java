@@ -28,7 +28,7 @@ public class OrderService {
     }
 
     public OrderResult createOrder(OrderDto orderDto) {
-        String orderId = UUID.randomUUID().toString();
+        UUID orderId = UUID.randomUUID();
         String status = "CREATED";
 
         Span span = tracer.spanBuilder("create_order").startSpan();
@@ -53,7 +53,7 @@ public class OrderService {
 
             kafkaTemplate.send("OrderCreated", event);
 
-            return new OrderResult(orderId, status);
+            return new OrderResult(orderId.toString(), status);
         } catch (Exception e) {
             span.recordException(e);
             throw new RuntimeException("Failed to create order: " + e.getMessage(), e);
