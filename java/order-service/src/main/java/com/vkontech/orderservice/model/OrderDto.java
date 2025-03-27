@@ -1,8 +1,14 @@
 package com.vkontech.orderservice.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class OrderDto {
+    @JsonProperty("customer_id")
     private String customerId;
+
+    @JsonProperty("product_id")
     private String productId;
+
     private int quantity;
 
     // Getters and setters (or use Lombok if preferred)
