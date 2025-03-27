@@ -6,6 +6,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -51,7 +52,11 @@ public class OrderService {
             event.put("quantity", orderDto.getQuantity());
             event.put("status", status);
 
-            kafkaTemplate.send("OrderCreated", event);
+            SendResult<String, Object> result = kafkaTemplate.send("OrderCreated", event).get();
+
+            System.out.println("Message sent successfully to topic: " + result.getRecordMetadata().topic());
+            System.out.println("Partition: " + result.getRecordMetadata().partition());
+            System.out.println("Offset: " + result.getRecordMetadata().offset());
 
             return new OrderResult(orderId.toString(), status);
         } catch (Exception e) {
