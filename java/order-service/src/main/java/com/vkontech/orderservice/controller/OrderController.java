@@ -1,7 +1,7 @@
 package com.vkontech.orderservice.controller;
 
-import com.vkontech.orderservice.model.OrderDto;
-import com.vkontech.orderservice.model.OrderResult;
+import com.vkontech.orderservice.model.CreateOrderRequest;
+import com.vkontech.orderservice.model.CreateOrderResponse;
 import com.vkontech.orderservice.service.OrderService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +19,9 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<?> createOrder(@RequestBody OrderDto orderDto) {
+    public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest createOrderRequest) {
         try {
-            OrderResult result = orderService.createOrder(orderDto);
+            CreateOrderResponse result = orderService.createOrder(createOrderRequest);
             return ResponseEntity.status(201).body(result);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));

@@ -1,7 +1,7 @@
 package com.vkontech.orderservice.service;
 
-import com.vkontech.orderservice.model.OrderDto;
-import com.vkontech.orderservice.model.OrderResult;
+import com.vkontech.orderservice.model.CreateOrderRequest;
+import com.vkontech.orderservice.model.CreateOrderResponse;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,7 +28,7 @@ public class OrderService {
         this.tracer = tracer;
     }
 
-    public OrderResult createOrder(OrderDto orderDto) {
+    public CreateOrderResponse createOrder(CreateOrderRequest createOrderRequest) {
         UUID orderId = UUID.randomUUID();
         String status = "CREATED";
 
@@ -38,18 +38,18 @@ public class OrderService {
             jdbcTemplate.update(
                     "INSERT INTO orders (id, customer_id, product_id, quantity, status) VALUES (?, ?, ?, ?, ?)",
                     orderId,
-                    orderDto.getCustomerId(),
-                    orderDto.getProductId(),
-                    orderDto.getQuantity(),
+                    createOrderRequest.getCustomerId(),
+                    createOrderRequest.getProductId(),
+                    createOrderRequest.getQuantity(),
                     status
             );
 
             // Prepare Kafka event
             Map<String, Object> event = new HashMap<>();
             event.put("order_id", orderId);
-            event.put("customer_id", orderDto.getCustomerId());
-            event.put("product_id", orderDto.getProductId());
-            event.put("quantity", orderDto.getQuantity());
+            event.put("customer_id", createOrderRequest.getCustomerId());
+            event.put("product_id", createOrderRequest.getProductId());
+            event.put("quantity", createOrderRequest.getQuantity());
             event.put("status", status);
 
             SendResult<String, Object> result = kafkaTemplate.send("OrderCreated", event).get();
@@ -58,7 +58,7 @@ public class OrderService {
             System.out.println("Partition: " + result.getRecordMetadata().partition());
             System.out.println("Offset: " + result.getRecordMetadata().offset());
 
-            return new OrderResult(orderId.toString(), status);
+            return new CreateOrderResponse(orderId.toString(), status);
         } catch (Exception e) {
             span.recordException(e);
             throw new RuntimeException("Failed to create order: " + e.getMessage(), e);
