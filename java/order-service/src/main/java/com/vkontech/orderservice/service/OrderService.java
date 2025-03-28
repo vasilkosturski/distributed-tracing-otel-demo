@@ -1,5 +1,6 @@
 package com.vkontech.orderservice.service;
 
+import com.vkontech.orderservice.kafka.OrderCreatedEvent;
 import com.vkontech.orderservice.model.CreateOrderRequest;
 import com.vkontech.orderservice.model.CreateOrderResponse;
 import io.opentelemetry.api.trace.Span;
@@ -9,8 +10,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -44,13 +43,12 @@ public class OrderService {
                     status
             );
 
-            // Prepare Kafka event
-            Map<String, Object> event = new HashMap<>();
-            event.put("order_id", orderId);
-            event.put("customer_id", createOrderRequest.getCustomerId());
-            event.put("product_id", createOrderRequest.getProductId());
-            event.put("quantity", createOrderRequest.getQuantity());
-            event.put("status", status);
+            OrderCreatedEvent event = new OrderCreatedEvent(
+                    orderId,
+                    createOrderRequest.getCustomerId(),
+                    createOrderRequest.getProductId(),
+                    createOrderRequest.getQuantity()
+            );
 
             SendResult<String, Object> result = kafkaTemplate.send("OrderCreated", event).get();
 
