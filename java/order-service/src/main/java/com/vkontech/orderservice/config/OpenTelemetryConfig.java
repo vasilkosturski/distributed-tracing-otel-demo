@@ -18,10 +18,9 @@ public class OpenTelemetryConfig {
         String otlpEndpoint = "https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces";
         String otlpHeader = System.getenv("OTEL_EXPORTER_OTLP_HEADERS");
 
-        // Set up OTLP HTTP exporter with headers
         OtlpHttpSpanExporter exporter = OtlpHttpSpanExporter.builder()
             .setEndpoint(otlpEndpoint)
-            .addHeader(otlpHeader.split("=")[0], otlpHeader.split("=")[1])
+            .addHeader(otlpHeader.split("=")[0], otlpHeader.split("=", 2)[1])
             .build();
 
         Resource resource = Resource.getDefault()
