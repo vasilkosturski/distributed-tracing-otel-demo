@@ -3,8 +3,10 @@ package com.vkontech.orderservice.service;
 import com.vkontech.orderservice.kafka.OrderCreatedEvent;
 import com.vkontech.orderservice.model.CreateOrderRequest;
 import com.vkontech.orderservice.model.CreateOrderResponse;
+import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -19,12 +21,10 @@ public class OrderService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Tracer tracer;
 
-    public OrderService(JdbcTemplate jdbcTemplate,
-                        KafkaTemplate<String, Object> kafkaTemplate,
-                        Tracer tracer) {
+    public OrderService(JdbcTemplate jdbcTemplate, KafkaTemplate<String, Object> kafkaTemplate) {
         this.jdbcTemplate = jdbcTemplate;
         this.kafkaTemplate = kafkaTemplate;
-        this.tracer = tracer;
+        this.tracer = GlobalOpenTelemetry.getTracer("order_service");
     }
 
     public CreateOrderResponse createOrder(CreateOrderRequest createOrderRequest) {
@@ -32,8 +32,7 @@ public class OrderService {
         String status = "CREATED";
 
         Span span = tracer.spanBuilder("create_order").startSpan();
-        try {
-            // Insert into DB
+        try (Scope ignored = span.makeCurrent()) {
             jdbcTemplate.update(
                     "INSERT INTO orders (id, customer_id, product_id, quantity, status) VALUES (?, ?, ?, ?, ?)",
                     orderId,

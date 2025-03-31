@@ -8,3 +8,4 @@ target/
 # OS/Editor noise
 .DS_Store
 Thumbs.db
+/opentelemetry-javaagent.jar
