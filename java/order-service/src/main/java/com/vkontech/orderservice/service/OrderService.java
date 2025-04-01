@@ -3,7 +3,6 @@ package com.vkontech.orderservice.service;
 import com.vkontech.orderservice.kafka.OrderCreatedEvent;
 import com.vkontech.orderservice.model.CreateOrderRequest;
 import com.vkontech.orderservice.model.CreateOrderResponse;
-import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
@@ -21,10 +20,12 @@ public class OrderService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Tracer tracer;
 
-    public OrderService(JdbcTemplate jdbcTemplate, KafkaTemplate<String, Object> kafkaTemplate) {
+    public OrderService(JdbcTemplate jdbcTemplate,
+                        KafkaTemplate<String, Object> kafkaTemplate,
+                        Tracer tracer) {
         this.jdbcTemplate = jdbcTemplate;
         this.kafkaTemplate = kafkaTemplate;
-        this.tracer = GlobalOpenTelemetry.getTracer("order_service");
+        this.tracer = tracer;
     }
 
     public CreateOrderResponse createOrder(CreateOrderRequest createOrderRequest) {
