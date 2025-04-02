@@ -1,6 +1,5 @@
 import os
 import json
-import time
 from kafka import KafkaConsumer, KafkaProducer
 from opentelemetry import trace
 from opentelemetry.instrumentation.kafka import KafkaInstrumentor
