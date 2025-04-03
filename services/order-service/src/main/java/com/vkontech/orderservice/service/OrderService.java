@@ -64,4 +64,11 @@ public class OrderService {
             span.end();
         }
     }
+
+    public void markOrderAsPackaged(UUID orderId) {
+        jdbcTemplate.update(
+                "UPDATE orders SET status = ? WHERE id = ?",
+                "PACKAGED", orderId
+        );
+    }
 }
