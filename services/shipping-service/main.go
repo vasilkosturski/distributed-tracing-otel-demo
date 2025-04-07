@@ -65,7 +65,7 @@ func main() {
 			continue
 		}
 
-		log.Printf("📦 Received OrderCreated: order_id=%s", order.OrderID)
+		log.Printf("Received OrderCreated: order_id=%s", order.OrderID)
 
 		out := PackagingCompletedEvent{
 			OrderID: order.OrderID,
