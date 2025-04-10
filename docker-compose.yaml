@@ -11,14 +11,18 @@ services:
       - "5432:5432"
 
   kafka:
-    image: bitnami/kafka:3.4.0
+    image: bitnami/kafka:3.9.0
+    ports:
+      - "9092:9092"  # Host access
+      - "9093:9093"  # Docker access
     environment:
       - KAFKA_BROKER_ID=1
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_LISTENERS=PLAINTEXT://localhost:9092,INTERNAL://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092,INTERNAL://kafka:9093
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
       - ALLOW_PLAINTEXT_LISTENER=yes
-    ports:
-      - "9092:9092"
     depends_on:
       - zookeeper
 
@@ -37,8 +41,16 @@ services:
       - COLLECTOR_OTLP_HTTP_PORT=4318
       - COLLECTOR_OTLP_GRPC_PORT=4317
     ports:
-      - "16686:16686"   # Jaeger UI
-      - "6831:6831/udp" # Jaeger agent
-      - "4317:4317"     # OTLP gRPC
-      - "4318:4318"     # OTLP HTTP
+      - "16686:16686"
+      - "6831:6831/udp"
+      - "4317:4317"
+      - "4318:4318"
 
+  shipping-service:
+    build:
+      context: ./services/shipping-service
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    networks:
+      - default

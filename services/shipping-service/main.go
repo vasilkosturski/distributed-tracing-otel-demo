@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-
 	"github.com/segmentio/kafka-go"
+	"log"
 )
 
-const (
-	kafkaBrokerAddress = "localhost:9092"
+var (
+	kafkaBrokerAddress = "kafka:9093"
 	orderCreatedTopic  = "OrderCreated"
 	packagingTopic     = "PackagingCompleted"
 	groupID            = "shipping-service-group"
