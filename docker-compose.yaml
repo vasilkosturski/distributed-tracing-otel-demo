@@ -16,6 +16,7 @@ services:
       - "9092:9092"  # Host access
       - "9093:9093"  # Docker access
     environment:
+      - KAFKA_ENABLE_KRAFT=false
       - KAFKA_BROKER_ID=1
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
       - KAFKA_LISTENERS=PLAINTEXT://localhost:9092,INTERNAL://:9093
