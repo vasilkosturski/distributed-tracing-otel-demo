@@ -21,7 +21,6 @@ type OrderCreatedEvent struct {
 
 type PackagingCompletedEvent struct {
 	OrderID string `json:"order_id"`
-	Status  string `json:"status"`
 }
 
 func main() {
@@ -68,7 +67,6 @@ func main() {
 
 		out := PackagingCompletedEvent{
 			OrderID: order.OrderID,
-			Status:  "PACKAGED",
 		}
 		payload, err := json.Marshal(out)
 		if err != nil {
