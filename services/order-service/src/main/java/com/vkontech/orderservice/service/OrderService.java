@@ -45,8 +45,8 @@ public class OrderService {
 
             OrderCreatedEvent event = new OrderCreatedEvent(
                     orderId,
-                    createOrderRequest.getCustomerId(),
-                    createOrderRequest.getProductId(),
+                    createOrderRequest.getCustomerId().toString(),
+                    createOrderRequest.getProductId().toString(),
                     createOrderRequest.getQuantity()
             );
 
