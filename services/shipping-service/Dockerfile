@@ -1,4 +1,4 @@
-# Stage 1: Build the Go binary (static, ARM64-compatible)
+# Stage 1: Build the Go binary (with Delve, ARM64-compatible)
 FROM golang:1.24 as builder
 
 WORKDIR /app
@@ -8,25 +8,28 @@ RUN go mod download
 
 COPY . .
 
-# Static build for Linux ARM64 (Apple Silicon)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -gcflags="all=-N -l" -a -installsuffix cgo -o shippingservice main.go
+# Install Delve
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
-# Stage 2: Minimal runtime container
-FROM debian:bullseye-slim
+# Build binary with debug info (no static build!)
+# Avoid CGO_ENABLED=0 so Delve can use libc from Go image
+RUN GOOS=linux GOARCH=arm64 go build -gcflags="all=-N -l" -o shippingservice main.go
 
-# Install runtime tools (if needed for debugging)
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    gdb \
-    && rm -rf /var/lib/apt/lists/*
+# Stage 2: Use full Go base image for matching GLIBC (no slim Debian)
+FROM golang:1.24
 
 WORKDIR /app
 
-# Copy the statically built binary from builder stage
-COPY --from=builder /app/shippingservice .
+# Install debugging tools (optional)
+RUN apt-get update && apt-get install -y \
+    gdb \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Optional: expose debugging port (e.g. for Delve)
+# Copy binary and delve
+COPY --from=builder /app/shippingservice .
+COPY --from=builder /go/bin/dlv /usr/local/bin/dlv
+
 EXPOSE 40000
 
-ENTRYPOINT ["./shippingservice"]
+ENTRYPOINT ["dlv", "exec", "./shippingservice", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient"]

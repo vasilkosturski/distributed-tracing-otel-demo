@@ -53,5 +53,7 @@ services:
       dockerfile: Dockerfile
     depends_on:
       - kafka
+    ports:
+      - "40000:40000"
     networks:
       - default
