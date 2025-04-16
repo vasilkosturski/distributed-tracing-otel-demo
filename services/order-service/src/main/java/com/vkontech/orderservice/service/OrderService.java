@@ -6,6 +6,8 @@ import com.vkontech.orderservice.model.CreateOrderResponse;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -15,6 +17,8 @@ import java.util.UUID;
 
 @Service
 public class OrderService {
+
+    private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -34,6 +38,8 @@ public class OrderService {
 
         Span span = tracer.spanBuilder("create_order").startSpan();
         try (Scope ignored = span.makeCurrent()) {
+            logger.info("Creating new order with ID: {}", orderId);
+
             jdbcTemplate.update(
                     "INSERT INTO orders (id, customer_id, product_id, quantity, status) VALUES (?, ?, ?, ?, ?)",
                     orderId,
@@ -52,12 +58,14 @@ public class OrderService {
 
             SendResult<String, Object> result = kafkaTemplate.send("OrderCreated", event).get();
 
-            System.out.println("Message sent successfully to topic: " + result.getRecordMetadata().topic());
-            System.out.println("Partition: " + result.getRecordMetadata().partition());
-            System.out.println("Offset: " + result.getRecordMetadata().offset());
+            logger.info("Published OrderCreated event to topic={} partition={} offset={}",
+                    result.getRecordMetadata().topic(),
+                    result.getRecordMetadata().partition(),
+                    result.getRecordMetadata().offset());
 
             return new CreateOrderResponse(orderId.toString(), status);
         } catch (Exception e) {
+            logger.error("Failed to create order", e);
             span.recordException(e);
             throw new RuntimeException("Failed to create order: " + e.getMessage(), e);
         } finally {
@@ -66,6 +74,7 @@ public class OrderService {
     }
 
     public void markOrderAsPackaged(UUID orderId) {
+        logger.info("Marking order {} as PACKAGED", orderId);
         jdbcTemplate.update(
                 "UPDATE orders SET status = ? WHERE id = ?",
                 "PACKAGED", orderId
