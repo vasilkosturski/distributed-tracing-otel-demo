@@ -32,4 +32,5 @@ COPY --from=builder /go/bin/dlv /usr/local/bin/dlv
 
 EXPOSE 40000
 
-ENTRYPOINT ["dlv", "exec", "./shippingservice", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient"]
+#ENTRYPOINT ["dlv", "exec", "./shippingservice", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient"]
+ENTRYPOINT ["./shippingservice"]
