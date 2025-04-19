@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"github.com/segmentio/kafka-go"
-	"log"
+	"github.com/uptrace/opentelemetry-go-extra/otelzap"
+	"go.uber.org/zap"
 )
 
 var (
@@ -24,11 +26,28 @@ type PackagingCompletedEvent struct {
 }
 
 func main() {
-	fmt.Println("Shipping Service is starting...")
-	log.Printf("Connecting to Kafka at %s", kafkaBrokerAddress)
-	log.Printf("Consumer topic: %s, Producer topic: %s", orderCreatedTopic, packagingTopic)
+	// Create base zap logger
+	baseLogger, err := zap.NewProduction()
+	if err != nil {
+		panic(fmt.Errorf("failed to create zap logger: %w", err))
+	}
+	defer baseLogger.Sync()
 
+	// Wrap it with otelzap to enable trace correlation
+	otelLogger := otelzap.New(baseLogger)
+	defer otelLogger.Sync()
+
+	// Create context + logger
 	ctx := context.Background()
+	log := otelLogger.Ctx(ctx)
+
+	fmt.Println("Shipping Service is starting...")
+
+	log.Info("Connecting to Kafka", zap.String("broker", kafkaBrokerAddress))
+	log.Info("Configured topics",
+		zap.String("consumer_topic", orderCreatedTopic),
+		zap.String("producer_topic", packagingTopic),
+	)
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{kafkaBrokerAddress},
@@ -37,7 +56,7 @@ func main() {
 	})
 	defer func() {
 		if err := reader.Close(); err != nil {
-			log.Printf("Error closing Kafka reader: %v", err)
+			log.Error("Error closing Kafka reader", zap.Error(err))
 		}
 	}()
 
@@ -48,45 +67,44 @@ func main() {
 	}
 	defer func() {
 		if err := writer.Close(); err != nil {
-			log.Printf("Error closing Kafka writer: %v", err)
+			log.Error("Error closing Kafka writer", zap.Error(err))
 		}
 	}()
 
-	log.Println("Kafka consumer started. Waiting for messages...")
+	log.Info("Kafka consumer started. Waiting for messages...")
 
 	for {
 		msg, err := reader.ReadMessage(ctx)
 		if err != nil {
-			log.Printf("❌ Error reading from Kafka: %v", err)
+			log.Error("❌ Error reading from Kafka", zap.Error(err))
 			continue
 		}
 
-		log.Printf("📨 Raw Kafka message: key=%s value=%s", string(msg.Key), string(msg.Value))
+		log.Info("📨 Raw Kafka message",
+			zap.ByteString("key", msg.Key),
+			zap.ByteString("value", msg.Value),
+		)
 
 		var order OrderCreatedEvent
 		if err := json.Unmarshal(msg.Value, &order); err != nil {
-			log.Printf("❌ Invalid JSON in OrderCreated event: %v", err)
+			log.Error("❌ Invalid JSON in OrderCreated event", zap.Error(err))
 			continue
 		}
 
-		log.Printf("✅ Received OrderCreated: order_id=%s", order.OrderID)
+		log.Info("✅ Received OrderCreated", zap.String("order_id", order.OrderID))
 
-		out := PackagingCompletedEvent{
-			OrderID: order.OrderID,
-		}
+		out := PackagingCompletedEvent{OrderID: order.OrderID}
 		payload, err := json.Marshal(out)
 		if err != nil {
-			log.Printf("❌ Failed to serialize PackagingCompleted event: %v", err)
+			log.Error("❌ Failed to serialize PackagingCompleted event", zap.Error(err))
 			continue
 		}
 
-		err = writer.WriteMessages(ctx, kafka.Message{
-			Value: payload,
-		})
+		err = writer.WriteMessages(ctx, kafka.Message{Value: payload})
 		if err != nil {
-			log.Printf("❌ Failed to publish PackagingCompleted: %v", err)
+			log.Error("❌ Failed to publish PackagingCompleted", zap.Error(err))
 		} else {
-			log.Printf("📤 Sent PackagingCompleted: order_id=%s", order.OrderID)
+			log.Info("📤 Sent PackagingCompleted", zap.String("order_id", order.OrderID))
 		}
 	}
 }
