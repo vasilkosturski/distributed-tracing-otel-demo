@@ -69,10 +69,23 @@ services:
     environment:
       OTEL_SERVICE_NAME: shipping-service
       OTEL_GO_AUTO_TARGET_EXE: /app/shippingservice
-      OTEL_EXPORTER_OTLP_ENDPOINT: https://otlp-gateway-prod-eu-west-2.grafana.net/otlp
-      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ==
-      OTEL_METRICS_EXPORTER: none
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-alloy:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+
+  grafana-alloy:
+    image: grafana/alloy:latest
+    command:
+      [
+        "run",
+        "--server.http.listen-addr=0.0.0.0:12345",
+        "--storage.path=/var/lib/alloy/data",
+        "/etc/alloy/config.alloy"
+      ]
+    volumes:
+      - ./alloy.config.hcl:/etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    restart: unless-stopped
 
 volumes:
   shared-volume:
