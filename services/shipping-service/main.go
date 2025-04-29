@@ -4,9 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/segmentio/kafka-go"
 	"github.com/uptrace/opentelemetry-go-extra/otelzap"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.uber.org/zap"
 )
 
@@ -26,50 +32,77 @@ type PackagingCompletedEvent struct {
 }
 
 func main() {
-	// Create base zap logger
+	ctx := context.Background()
+
+	// 1. Build Resource
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("shipping-service"),
+			semconv.ServiceVersion("0.1.0"),
+		),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build resource: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 2. OTLP Log Exporter to Grafana Cloud
+	exporter, err := otlploggrpc.New(ctx,
+		otlploggrpc.WithEndpoint("otlp-gateway-prod-eu-west-2.grafana.net:4317"),
+		otlploggrpc.WithHeaders(map[string]string{
+			"Authorization": "Basic MTE5NzE2NzpnbGNfZXlK...", // truncate in real code
+		}),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create OTLP exporter: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 3. LoggerProvider with batch processor and resource
+	loggerProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+	)
+	defer loggerProvider.Shutdown(ctx)
+
+	// 4. Register as global logger provider
+	global.SetLoggerProvider(loggerProvider)
+
+	// 5. Create zap logger and bridge it with otelzap
 	baseLogger, err := zap.NewProduction()
 	if err != nil {
 		panic(fmt.Errorf("failed to create zap logger: %w", err))
 	}
 	defer baseLogger.Sync()
 
-	// Wrap it with otelzap to enable trace correlation
 	otelLogger := otelzap.New(baseLogger)
 	defer otelLogger.Sync()
-
-	// Create context + logger
-	ctx := context.Background()
 	log := otelLogger.Ctx(ctx)
 
-	fmt.Println("Shipping Service is starting...")
-
+	// --- Service Logs ---
+	log.Info("Shipping Service is starting...")
 	log.Info("Connecting to Kafka", zap.String("broker", kafkaBrokerAddress))
 	log.Info("Configured topics",
 		zap.String("consumer_topic", orderCreatedTopic),
 		zap.String("producer_topic", packagingTopic),
 	)
 
+	// --- Kafka Setup ---
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{kafkaBrokerAddress},
 		Topic:   orderCreatedTopic,
 		GroupID: groupID,
 	})
-	defer func() {
-		if err := reader.Close(); err != nil {
-			log.Error("Error closing Kafka reader", zap.Error(err))
-		}
-	}()
+	defer reader.Close()
 
 	writer := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBrokerAddress),
 		Topic:    packagingTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
-	defer func() {
-		if err := writer.Close(); err != nil {
-			log.Error("Error closing Kafka writer", zap.Error(err))
-		}
-	}()
+	defer writer.Close()
 
 	log.Info("Kafka consumer started. Waiting for messages...")
 
