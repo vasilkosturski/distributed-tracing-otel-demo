@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
@@ -108,16 +108,23 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 	return tracerProvider, nil
 }
 
-func newMeterProvider() (*metric.MeterProvider, error) {
-	metricExporter, err := stdoutmetric.New()
+func newMeterProvider() (*sdkmetric.MeterProvider, error) {
+	ctx := context.Background()
+
+	metricExporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithEndpoint("otlp-gateway-prod-eu-west-2.grafana.net"),
+		otlpmetrichttp.WithURLPath("/otlp/v1/metrics"),
+		otlpmetrichttp.WithHeaders(map[string]string{
+			"Authorization": "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ==",
+		}),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExporter,
-			// Default is 1m. Set to 3s for demonstrative purposes.
-			metric.WithInterval(3*time.Second))),
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter,
+			sdkmetric.WithInterval(3*time.Second))),
 	)
 	return meterProvider, nil
 }
