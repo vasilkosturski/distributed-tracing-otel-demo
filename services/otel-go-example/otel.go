@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -129,14 +129,22 @@ func newMeterProvider() (*sdkmetric.MeterProvider, error) {
 	return meterProvider, nil
 }
 
-func newLoggerProvider() (*log.LoggerProvider, error) {
-	logExporter, err := stdoutlog.New()
+func newLoggerProvider() (*sdklog.LoggerProvider, error) {
+	ctx := context.Background()
+
+	logExporter, err := otlploghttp.New(ctx,
+		otlploghttp.WithEndpoint("otlp-gateway-prod-eu-west-2.grafana.net"),
+		otlploghttp.WithURLPath("/otlp/v1/logs"),
+		otlploghttp.WithHeaders(map[string]string{
+			"Authorization": "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ==",
+		}),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	loggerProvider := log.NewLoggerProvider(
-		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+	loggerProvider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 	)
 	return loggerProvider, nil
 }
