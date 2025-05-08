@@ -18,14 +18,9 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
-// setupOTelSDK bootstraps the OpenTelemetry pipeline.
-// If it does not return an error, make sure to call shutdown for proper cleanup.
 func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
 
-	// shutdown calls cleanup functions registered via shutdownFuncs.
-	// The errors from the calls are joined.
-	// Each registered cleanup will be invoked once.
 	shutdown = func(ctx context.Context) error {
 		var err error
 		for _, fn := range shutdownFuncs {
@@ -35,17 +30,20 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 		return err
 	}
 
-	// handleErr calls shutdown for cleanup and makes sure that all errors are returned.
 	handleErr := func(inErr error) {
 		err = errors.Join(inErr, shutdown(ctx))
 	}
 
-	// Set up propagator.
-	prop := newPropagator()
-	otel.SetTextMapPropagator(prop)
+	// Shared resource (consistent service name)
+	res, err := newResource()
+	if err != nil {
+		return nil, err
+	}
 
-	// Set up trace provider.
-	tracerProvider, err := newTracerProvider()
+	otel.SetTextMapPropagator(newPropagator())
+
+	// Traces
+	tracerProvider, err := newTracerProvider(res)
 	if err != nil {
 		handleErr(err)
 		return
@@ -53,8 +51,8 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
 	otel.SetTracerProvider(tracerProvider)
 
-	// Set up meter provider.
-	meterProvider, err := newMeterProvider()
+	// Metrics
+	meterProvider, err := newMeterProvider(res)
 	if err != nil {
 		handleErr(err)
 		return
@@ -62,8 +60,8 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, meterProvider.Shutdown)
 	otel.SetMeterProvider(meterProvider)
 
-	// Set up logger provider.
-	loggerProvider, err := newLoggerProvider()
+	// Logs
+	loggerProvider, err := newLoggerProvider(res)
 	if err != nil {
 		handleErr(err)
 		return
@@ -81,7 +79,16 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTracerProvider() (*trace.TracerProvider, error) {
+func newResource() (*resource.Resource, error) {
+	return resource.New(
+		context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceName("otel-go-example"),
+		),
+	)
+}
+
+func newTracerProvider(res *resource.Resource) (*trace.TracerProvider, error) {
 	ctx := context.Background()
 
 	traceExporter, err := otlptracehttp.New(ctx,
@@ -95,20 +102,13 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 		return nil, err
 	}
 
-	resourceAttrs := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName("otel-go-example"),
-	)
-
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter,
-			trace.WithBatchTimeout(1*time.Second)),
-		trace.WithResource(resourceAttrs),
-	)
-	return tracerProvider, nil
+	return trace.NewTracerProvider(
+		trace.WithBatcher(traceExporter, trace.WithBatchTimeout(1*time.Second)),
+		trace.WithResource(res),
+	), nil
 }
 
-func newMeterProvider() (*sdkmetric.MeterProvider, error) {
+func newMeterProvider(res *resource.Resource) (*sdkmetric.MeterProvider, error) {
 	ctx := context.Background()
 
 	metricExporter, err := otlpmetrichttp.New(ctx,
@@ -122,14 +122,13 @@ func newMeterProvider() (*sdkmetric.MeterProvider, error) {
 		return nil, err
 	}
 
-	meterProvider := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter,
-			sdkmetric.WithInterval(3*time.Second))),
-	)
-	return meterProvider, nil
+	return sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(3*time.Second))),
+		sdkmetric.WithResource(res),
+	), nil
 }
 
-func newLoggerProvider() (*sdklog.LoggerProvider, error) {
+func newLoggerProvider(res *resource.Resource) (*sdklog.LoggerProvider, error) {
 	ctx := context.Background()
 
 	logExporter, err := otlploghttp.New(ctx,
@@ -143,8 +142,8 @@ func newLoggerProvider() (*sdklog.LoggerProvider, error) {
 		return nil, err
 	}
 
-	loggerProvider := sdklog.NewLoggerProvider(
+	return sdklog.NewLoggerProvider(
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-	)
-	return loggerProvider, nil
+		sdklog.WithResource(res),
+	), nil
 }
