@@ -3,7 +3,6 @@ module example.com/otel-go-example
 go 1.24.2
 
 require (
-	go.opentelemetry.io/contrib/bridges/otelslog v0.10.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.35.0
@@ -14,7 +13,13 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.35.0
 )
 
-require go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.11.0
+require (
+	go.opentelemetry.io/contrib/bridges/otelzap v0.10.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.11.0
+	go.uber.org/zap v1.27.0
+)
+
+require go.uber.org/multierr v1.11.0 // indirect
 
 require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
