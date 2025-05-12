@@ -22,14 +22,21 @@ import (
 var ZapLogger *zap.Logger
 
 func main() {
-	// Initialize a basic Zap logger for bootstrap errors.
-	// This will be replaced by a more sophisticated one in run().
+	// Initialize a basic Zap logger for bootstrap errors,
+	// or if OTel setup fails and we don't have the OTel core.
+	// This will be replaced by a more sophisticated one in run() if OTel setup is successful.
 	var initErr error
-	ZapLogger, initErr = zap.NewProduction()
+	ZapLogger, initErr = zap.NewProduction() // Default to a production console logger initially
 	if initErr != nil {
 		log.Fatalf("Failed to initialize initial zap logger: %v", initErr) // Use standard log if zap fails
 	}
-	defer ZapLogger.Sync() // Ensure buffered logs are flushed before exiting.
+	// It's good practice to Sync zap loggers, especially before exit.
+	// This defer will catch the Sync for the last assigned ZapLogger.
+	defer func() {
+		if ZapLogger != nil {
+			_ = ZapLogger.Sync()
+		}
+	}()
 
 	if err := run(); err != nil {
 		ZapLogger.Fatal("Application failed to run", zap.Error(err))
@@ -45,51 +52,41 @@ func run() (err error) {
 	otelShutdown, otelSetupErr := setupOTelSDK(ctx)
 	if otelSetupErr != nil {
 		ZapLogger.Error("Failed to setup OpenTelemetry SDK", zap.Error(otelSetupErr))
-		// Continue with console-only ZapLogger, or return error depending on requirements
-		// For this demo, we log and continue; otelShutdown will handle partial cleanup.
+		// ZapLogger remains the initial zap.NewProduction() logger (console only)
+		// We will still attempt to shutdown any partially initialized OTel components.
 	} else {
 		// OTel SDK setup was successful, create the OTel-bridged Zap logger
 		logProvider := global.GetLoggerProvider() // Get the globally set OTel LoggerProvider
-		// Use the same instrumentation scope name as previously used in dice.go for otelslog
 		instrumentationScopeName := "go.opentelemetry.io/otel/example/dice"
 		otelZapCore := otelzap.NewCore(instrumentationScopeName,
 			otelzap.WithLoggerProvider(logProvider),
 		)
 
-		// For local development, also log to console with a human-readable format or JSON
-		consoleEncoderConfig := zap.NewProductionEncoderConfig()
-		consoleEncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder // More readable timestamps
-		consoleCore := zapcore.NewCore(
-			zapcore.NewJSONEncoder(consoleEncoderConfig), // Or NewConsoleEncoder for plain text
-			zapcore.Lock(os.Stdout),
-			zap.DebugLevel, // Log all levels to console, or make this configurable
-		)
-
-		// Create a Tee core to write to both OTel and console
-		teeCore := zapcore.NewTee(otelZapCore, consoleCore)
-		ZapLogger = zap.New(teeCore,
+		// Configure ZapLogger to use ONLY the otelZapCore
+		ZapLogger = zap.New(otelZapCore, // Use otelZapCore directly, no Tee, no consoleCore
 			zap.AddCaller(),                                    // Adds file and line number
 			zap.AddStacktrace(zapcore.ErrorLevel),              // Adds stacktrace for error logs and above
 			zap.Fields(zap.String("service.version", "0.1.0")), // Example of a common field
 		)
-		ZapLogger.Info("Successfully re-initialized Zap logger with OpenTelemetry bridge and console output.")
+		// This log will now only go to OTel
+		ZapLogger.Info("Successfully re-initialized Zap logger with OpenTelemetry bridge ONLY.")
 	}
 
 	// Handle shutdown properly so nothing leaks.
-	// This defer needs to be after ZapLogger is potentially re-initialized
 	defer func() {
-		// otelShutdown can be called even if otelSetupErr was not nil,
-		// as it's designed to shut down what was successfully started.
-		shutdownErr := otelShutdown(context.Background())
-		if shutdownErr != nil {
-			ZapLogger.Error("Error during OpenTelemetry shutdown", zap.Error(shutdownErr))
+		if otelShutdown != nil { // Ensure otelShutdown is not nil before calling
+			shutdownErr := otelShutdown(context.Background())
+			if shutdownErr != nil {
+				// Use the current ZapLogger (either console or OTel-bridged)
+				ZapLogger.Error("Error during OpenTelemetry shutdown", zap.Error(shutdownErr))
+			}
+			if shutdownErr != nil { // Make sure to join this error as well
+				err = errors.Join(err, shutdownErr)
+			}
 		}
-		// Join original setup error (if any) and shutdown error (if any) with the main function error
-		if otelSetupErr != nil { // Ensure otelSetupErr is included if it occurred
+		// Join original setup error (if any)
+		if otelSetupErr != nil {
 			err = errors.Join(err, otelSetupErr)
-		}
-		if shutdownErr != nil {
-			err = errors.Join(err, shutdownErr)
 		}
 	}()
 
@@ -109,23 +106,21 @@ func run() (err error) {
 
 	// Wait for interruption.
 	select {
-	case err = <-srvErr:
+	case httpErr := <-srvErr: // Renamed to avoid shadowing outer 'err'
 		// Error when starting HTTP server.
-		if !errors.Is(err, http.ErrServerClosed) { // Don't log ErrServerClosed as a fatal error
-			ZapLogger.Error("HTTP server ListenAndServe error", zap.Error(err))
+		if !errors.Is(httpErr, http.ErrServerClosed) {
+			ZapLogger.Error("HTTP server ListenAndServe error", zap.Error(httpErr))
+			err = errors.Join(err, httpErr) // Join this error
 		} else {
 			ZapLogger.Info("HTTP server closed gracefully.")
-			err = nil // Clear err if it's ErrServerClosed from a graceful shutdown
+			// err = nil // Don't set outer err to nil here if it might have other errors
 		}
-		return
+		return // Return to execute defers
 	case <-ctx.Done():
-		// Wait for first CTRL+C.
-		// Stop receiving signal notifications as soon as possible.
 		stop()
 		ZapLogger.Info("Shutdown signal received, initiating graceful shutdown...")
 	}
 
-	// When Shutdown is called, ListenAndServe immediately returns ErrServerClosed.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelShutdown()
 	if shutdownHTTPErr := srv.Shutdown(shutdownCtx); shutdownHTTPErr != nil {
@@ -145,18 +140,16 @@ func newHTTPHandler() http.Handler {
 		mux.Handle(pattern, handler)
 	}
 
-	registerHandlers(mux, handleFunc) // Pass mux and handleFunc to a separate function
+	registerHandlers(mux, handleFunc)
 
 	handler := otelhttp.NewHandler(mux, "http-server",
-		otelhttp.WithMeterProvider(otel.GetMeterProvider()),   // Ensure correct providers are used
-		otelhttp.WithTracerProvider(otel.GetTracerProvider()), // if not default global
+		otelhttp.WithMeterProvider(otel.GetMeterProvider()),
+		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
 	)
 	return handler
 }
 
-// registerHandlers centralizes handler registration
 func registerHandlers(mux *http.ServeMux, handleFunc func(pattern string, handlerFunc func(http.ResponseWriter, *http.Request))) {
 	handleFunc("/rolldice/", rolldice)
 	handleFunc("/rolldice/{player}", rolldice)
-	// Add other handlers here if needed
 }
