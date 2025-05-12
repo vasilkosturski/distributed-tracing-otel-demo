@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 	"errors"
-	"log" // Standard log for very early errors
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 
-	"go.opentelemetry.io/contrib/bridges/otelzap" // Import otelzap
+	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log/global" // To get the global OTel logger provider
-	"go.uber.org/zap"                     // Import zap
+	"go.opentelemetry.io/otel/log/global"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -22,16 +22,11 @@ import (
 var ZapLogger *zap.Logger
 
 func main() {
-	// Initialize a basic Zap logger for bootstrap errors,
-	// or if OTel setup fails and we don't have the OTel core.
-	// This will be replaced by a more sophisticated one in run() if OTel setup is successful.
-	var initErr error
-	ZapLogger, initErr = zap.NewProduction() // Default to a production console logger initially
+	ZapLogger, initErr := zap.NewProduction()
 	if initErr != nil {
 		log.Fatalf("Failed to initialize initial zap logger: %v", initErr) // Use standard log if zap fails
 	}
-	// It's good practice to Sync zap loggers, especially before exit.
-	// This defer will catch the Sync for the last assigned ZapLogger.
+
 	defer func() {
 		if ZapLogger != nil {
 			_ = ZapLogger.Sync()
