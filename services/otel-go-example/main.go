@@ -57,14 +57,20 @@ func run() (err error) {
 			otelzap.WithLoggerProvider(logProvider),
 		)
 
-		// Configure ZapLogger to use ONLY the otelZapCore
-		ZapLogger = zap.New(otelZapCore, // Use otelZapCore directly, no Tee, no consoleCore
+		// Create a console core for zap
+		consoleEncoder := zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig())
+		consoleCore := zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stdout), zapcore.InfoLevel)
+
+		// Use zapcore.NewTee to output to both OTel and console
+		teeCore := zapcore.NewTee(otelZapCore, consoleCore)
+
+		ZapLogger = zap.New(teeCore,
 			zap.AddCaller(),                                    // Adds file and line number
 			zap.AddStacktrace(zapcore.ErrorLevel),              // Adds stacktrace for error logs and above
 			zap.Fields(zap.String("service.version", "0.1.0")), // Example of a common field
 		)
-		// This log will now only go to OTel
-		ZapLogger.Info("Successfully re-initialized Zap logger with OpenTelemetry bridge ONLY.")
+		// This log will now go to both OTel and console
+		ZapLogger.Info("Successfully re-initialized Zap logger with OpenTelemetry bridge AND console output.")
 	}
 
 	// Handle shutdown properly so nothing leaks.
