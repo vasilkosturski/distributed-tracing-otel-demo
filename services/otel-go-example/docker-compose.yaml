@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  app:
+    container_name: otel-go-example-app-manual-sdk
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    # Your app's otel.go reads credentials directly from the code.
+    # No environment variables needed here for OTel for this test.
