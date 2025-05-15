@@ -2,11 +2,36 @@ version: '3.8'
 
 services:
   app:
-    container_name: otel-go-example-app-manual-sdk
+    # This container name will be used for this specific test run.
+    # It helps distinguish from other potential containers if you have multiple compose files.
+    container_name: otel-go-example-app-manual-sdk-test
     build:
+      # The build context is the current directory, which is services/otel-go-example/
+      # where this docker-compose.yml and the Dockerfile reside.
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile # This refers to services/otel-go-example/Dockerfile
     ports:
-      - "8080:8080"
-    # Your app's otel.go reads credentials directly from the code.
-    # No environment variables needed here for OTel for this test.
+      - "8080:8080" # Maps port 8080 on your host to port 8080 in the container.
+    # No volumes are mounted to /app for this specific test,
+    # as we identified that mounting a volume there was correlated with
+    # the app's console logs not appearing in `docker-compose logs app`.
+    # We want to verify the app's logging to console and OTel export *without*
+    # that specific volume mount first.
+
+    # Your application's otel.go file currently has the OTel endpoint
+    # and authorization token hardcoded. If you wanted to make these
+    # configurable via Docker Compose, you would add an 'environment'
+    # section here and modify your Go code in otel.go to read these
+    # environment variables. For this test, we are relying on the
+    # hardcoded values in otel.go.
+    environment:
+      # Example if you were to make OTel endpoint configurable (NOT CURRENTLY IMPLEMENTED IN YOUR otel.go):
+      # OTEL_EXPORTER_OTLP_ENDPOINT_APP: "https://otlp-gateway-prod-eu-west-2.grafana.net"
+      # OTEL_EXPORTER_OTLP_HEADERS_APP: "Authorization=Basic YOUR_TOKEN_HERE"
+      # OTEL_EXPORTER_OTLP_LOGS_URL_PATH_APP: "/otlp/v1/logs"
+      # OTEL_EXPORTER_OTLP_TRACES_URL_PATH_APP: "/otlp/v1/traces"
+      # OTEL_EXPORTER_OTLP_METRICS_URL_PATH_APP: "/otlp/v1/metrics"
+      PASS_THROUGH_TEST: "AppCanSeeThis" # Simple env var to test if app can see it (optional)
+
+# No top-level 'volumes:' definition is needed for this simplified setup,
+# as we are not using the 'otel-go-example-app-bin' named volume for the 'app' service in this test.
