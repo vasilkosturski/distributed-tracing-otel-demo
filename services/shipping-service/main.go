@@ -10,13 +10,17 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/segmentio/kafka-go" // Keep Kafka code, but no OTel instrumentation for it yet
+	otelkafka "github.com/Trendyol/otel-kafka-konsumer" // OpenTelemetry Kafka instrumentation
+	"github.com/segmentio/kafka-go"
 
-	"go.opentelemetry.io/contrib/bridges/otelzap"                 // Official OTel Contrib bridge for Zap
-	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp" // OTLP HTTP for Logs
+	"go.opentelemetry.io/contrib/bridges/otelzap"                     // Official OTel Contrib bridge for Zap
+	"go.opentelemetry.io/otel"                                        // OpenTelemetry API
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"     // OTLP HTTP for Logs
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp" // OTLP HTTP for Traces
 	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace" // SDK for traces
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -117,6 +121,82 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 	return shutdown, currentErr // Return accumulated errors
 }
 
+// setupTracingOTelSDK configures OpenTelemetry SDK specifically for TRACES.
+func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
+	var shutdownFuncs []func(context.Context) error
+	var currentErr error // To accumulate errors from various setup steps
+
+	shutdown = func(ctx context.Context) error {
+		var errs error
+		// LIFO order for shutdown
+		for i := len(shutdownFuncs) - 1; i >= 0; i-- {
+			errs = errors.Join(errs, shutdownFuncs[i](ctx))
+		}
+		shutdownFuncs = nil
+		return errs
+	}
+
+	addShutdown := func(name string, fn func(context.Context) error) {
+		if fn != nil {
+			shutdownFuncs = append(shutdownFuncs, fn)
+		}
+	}
+	// handleErr accumulates errors. It's called after each setup step that can fail.
+	handleErr := func(componentName string, inErr error) {
+		if inErr != nil {
+			currentErr = errors.Join(currentErr, fmt.Errorf("failed to setup %s: %w", componentName, inErr))
+		}
+	}
+
+	// 1. Build Resource
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("shipping-service"),
+			semconv.ServiceVersion("0.1.0"),
+		),
+	)
+	if err != nil { // If resource creation fails, we can't proceed
+		return nil, fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	// --- Common OTLP/HTTP Exporter Options ---
+	// Using the same auth as logs
+	grafanaAuthHeader := map[string]string{"Authorization": "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ=="}
+	grafanaBaseEndpoint := "otlp-gateway-prod-eu-west-2.grafana.net" // Base hostname
+
+	// 2. Setup Trace Exporter using OTLP/HTTP
+	traceExporter, errExporter := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpoint(grafanaBaseEndpoint),
+		otlptracehttp.WithURLPath("/otlp/v1/traces"), // Path for traces
+		otlptracehttp.WithHeaders(grafanaAuthHeader),
+	)
+	handleErr("OTLP Trace Exporter", errExporter)
+
+	// Proceed only if exporter was created successfully
+	if errExporter == nil {
+		// Configure TracerProvider with batch span processor
+		tp := sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(traceExporter,
+				sdktrace.WithMaxQueueSize(2048),
+				sdktrace.WithBatchTimeout(5*time.Second),
+			),
+			sdktrace.WithResource(res),
+		)
+
+		// Set global TracerProvider
+		otel.SetTracerProvider(tp)
+
+		addShutdown("TracerProvider", tp.Shutdown)
+	} else {
+		// If exporter failed, we might not want to proceed with setting up the TracerProvider
+		// or we set a no-op one. For now, currentErr will have the exporter error.
+	}
+
+	return shutdown, currentErr // Return accumulated errors
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
@@ -134,19 +214,37 @@ func main() {
 	}()
 	AppLogger.Info("Shipping Service attempting to start (initial console logger)...")
 
-	otelShutdown, otelSetupErr := setupLoggingOTelSDK(ctx) // Use the log-focused setup
-	if otelSetupErr != nil {
-		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for logging completely", zap.Error(otelSetupErr))
+	// Setup logging SDK
+	otelLogShutdown, otelLogSetupErr := setupLoggingOTelSDK(ctx)
+	if otelLogSetupErr != nil {
+		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for logging completely", zap.Error(otelLogSetupErr))
 	} else {
 		AppLogger.Info("✅ OpenTelemetry SDK for logging initialized (or partially).")
 	}
-	if otelShutdown != nil {
+	if otelLogShutdown != nil {
 		defer func() {
 			AppLogger.Info("Shutting down OpenTelemetry SDK for logging...")
-			if shutdownErr := otelShutdown(context.Background()); shutdownErr != nil {
+			if shutdownErr := otelLogShutdown(context.Background()); shutdownErr != nil {
 				AppLogger.Error("❌ Error during OTel logging SDK shutdown", zap.Error(shutdownErr))
 			}
 			AppLogger.Info("OTel logging SDK shutdown complete.")
+		}()
+	}
+
+	// Setup tracing SDK
+	otelTraceShutdown, otelTraceSetupErr := setupTracingOTelSDK(ctx)
+	if otelTraceSetupErr != nil {
+		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for tracing completely", zap.Error(otelTraceSetupErr))
+	} else {
+		AppLogger.Info("✅ OpenTelemetry SDK for tracing initialized (or partially).")
+	}
+	if otelTraceShutdown != nil {
+		defer func() {
+			AppLogger.Info("Shutting down OpenTelemetry SDK for tracing...")
+			if shutdownErr := otelTraceShutdown(context.Background()); shutdownErr != nil {
+				AppLogger.Error("❌ Error during OTel tracing SDK shutdown", zap.Error(shutdownErr))
+			}
+			AppLogger.Info("OTel tracing SDK shutdown complete.")
 		}()
 	}
 
@@ -180,13 +278,23 @@ func main() {
 		zap.String("producer_topic", packagingTopic),
 	)
 
-	// --- Kafka Setup (using non-instrumented clients for now) ---
-	reader := kafka.NewReader(kafka.ReaderConfig{
+	// --- Kafka Setup with OTel instrumentation ---
+	// Create a base reader config
+	readerConfig := kafka.ReaderConfig{
 		Brokers: []string{kafkaBrokerAddress},
 		Topic:   orderCreatedTopic,
 		GroupID: groupID,
 		MaxWait: 1 * time.Second,
-	})
+	}
+
+	// Create the base reader first, then wrap with OTel instrumentation
+	baseReader := kafka.NewReader(readerConfig)
+	reader, err := otelkafka.NewReader(baseReader)
+	if err != nil {
+		AppLogger.Error("❌ Failed to create instrumented Kafka reader", zap.Error(err))
+		return
+	}
+
 	defer func() {
 		AppLogger.Info("Closing Kafka reader...")
 		if err := reader.Close(); err != nil {
@@ -194,11 +302,19 @@ func main() {
 		}
 	}()
 
-	writer := &kafka.Writer{
+	// Create writer with OTel instrumentation
+	baseWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBrokerAddress),
 		Topic:    packagingTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
+
+	writer, err := otelkafka.NewWriter(baseWriter)
+	if err != nil {
+		AppLogger.Error("❌ Failed to create instrumented Kafka writer", zap.Error(err))
+		return
+	}
+
 	defer func() {
 		AppLogger.Info("Closing Kafka writer...")
 		if err := writer.Close(); err != nil {
@@ -249,7 +365,7 @@ func main() {
 			continue
 		}
 
-		err = writer.WriteMessages(ctx, kafka.Message{Value: payload, Key: []byte(order.OrderID)})
+		err = writer.WriteMessages(ctx, []kafka.Message{{Value: payload, Key: []byte(order.OrderID)}})
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				AppLogger.Info("Context done, aborting Kafka write.", zap.Error(err))
