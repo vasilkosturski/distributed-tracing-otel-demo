@@ -13,11 +13,13 @@ import (
 	otelkafka "github.com/Trendyol/otel-kafka-konsumer" // OpenTelemetry Kafka instrumentation
 	"github.com/segmentio/kafka-go"
 
-	"go.opentelemetry.io/contrib/bridges/otelzap"                     // Official OTel Contrib bridge for Zap
-	"go.opentelemetry.io/otel"                                        // OpenTelemetry API
+	"go.opentelemetry.io/contrib/bridges/otelzap" // Official OTel Contrib bridge for Zap
+	"go.opentelemetry.io/otel"                    // OpenTelemetry API
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"     // OTLP HTTP for Logs
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp" // OTLP HTTP for Traces
 	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace" // SDK for traces
@@ -122,7 +124,7 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 }
 
 // setupTracingOTelSDK configures OpenTelemetry SDK specifically for TRACES.
-func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
+func setupTracingOTelSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
 	var currentErr error // To accumulate errors from various setup steps
 
@@ -158,8 +160,15 @@ func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 		),
 	)
 	if err != nil { // If resource creation fails, we can't proceed
-		return nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, nil, fmt.Errorf("failed to create resource: %w", err)
 	}
+
+	// Set up context propagation for distributed tracing
+	// This enables trace context to be properly propagated in Kafka headers
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 
 	// --- Common OTLP/HTTP Exporter Options ---
 	// Using the same auth as logs
@@ -177,7 +186,7 @@ func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
 		// Configure TracerProvider with batch span processor
-		tp := sdktrace.NewTracerProvider(
+		tp = sdktrace.NewTracerProvider(
 			sdktrace.WithBatcher(traceExporter,
 				sdktrace.WithMaxQueueSize(2048),
 				sdktrace.WithBatchTimeout(5*time.Second),
@@ -185,7 +194,7 @@ func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 			sdktrace.WithResource(res),
 		)
 
-		// Set global TracerProvider
+		// MOVE this line to AFTER fully initializing tp
 		otel.SetTracerProvider(tp)
 
 		addShutdown("TracerProvider", tp.Shutdown)
@@ -194,7 +203,7 @@ func setupTracingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 		// or we set a no-op one. For now, currentErr will have the exporter error.
 	}
 
-	return shutdown, currentErr // Return accumulated errors
+	return tp, shutdown, currentErr // Return accumulated errors
 }
 
 func main() {
@@ -232,7 +241,7 @@ func main() {
 	}
 
 	// Setup tracing SDK
-	otelTraceShutdown, otelTraceSetupErr := setupTracingOTelSDK(ctx)
+	tp, otelTraceShutdown, otelTraceSetupErr := setupTracingOTelSDK(ctx)
 	if otelTraceSetupErr != nil {
 		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for tracing completely", zap.Error(otelTraceSetupErr))
 	} else {
@@ -302,14 +311,23 @@ func main() {
 		}
 	}()
 
-	// Create writer with OTel instrumentation
 	baseWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBrokerAddress),
 		Topic:    packagingTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
 
-	writer, err := otelkafka.NewWriter(baseWriter)
+	// Then create the writer with the direct tp instance
+	writer, err := otelkafka.NewWriter(baseWriter,
+		otelkafka.WithTracerProvider(tp),
+		otelkafka.WithPropagator(propagation.TraceContext{}),
+		otelkafka.WithAttributes(
+			[]attribute.KeyValue{
+				semconv.MessagingDestinationNameKey.String(packagingTopic),
+				attribute.String("messaging.kafka.client_id", "shipping-service"),
+			},
+		),
+	)
 	if err != nil {
 		AppLogger.Error("❌ Failed to create instrumented Kafka writer", zap.Error(err))
 		return
@@ -365,6 +383,9 @@ func main() {
 			continue
 		}
 
+		// Create a message with context that will propagate the trace
+		// The Kafka writer will automatically propagate trace context to message headers
+		// when TextMapPropagator is properly set up
 		err = writer.WriteMessages(ctx, []kafka.Message{{Value: payload, Key: []byte(order.OrderID)}})
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
