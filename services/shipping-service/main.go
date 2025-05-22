@@ -356,7 +356,7 @@ func main() {
 		}
 
 		// Extract trace context from the incoming Kafka message headers
-		// This ensures we maintain the same trace across services
+		// This is important for connecting the trace from the producer
 		propagator := otel.GetTextMapPropagator()
 		carrier := propagation.MapCarrier{}
 
@@ -368,16 +368,15 @@ func main() {
 		// Extract the context from the carrier - this will have the parent span info
 		msgCtx := propagator.Extract(ctx, carrier)
 
-		// Create a span for processing this message - now linked to the parent trace
-		// Using a clearer name that will show up nicely in the UI
-		processingCtx, span := tp.Tracer("shipping-service").Start(msgCtx, "order-packaging",
+		// Create a single processing span that will be the parent of the automatic Kafka send span
+		processingCtx, span := tp.Tracer("shipping-service").Start(msgCtx, "process-shipping",
 			trace.WithSpanKind(trace.SpanKindConsumer),
 			trace.WithAttributes(
 				attribute.String("messaging.operation", "process"),
 				attribute.String("messaging.system", "kafka"),
 			),
 		)
-		defer span.End() // This will end the span after all processing is complete
+		defer span.End()
 
 		AppLogger.Info("📨 Raw Kafka message received",
 			zap.ByteString("key", msg.Key),
@@ -396,6 +395,9 @@ func main() {
 			continue
 		}
 
+		// Add the order ID as an attribute to the span
+		span.SetAttributes(attribute.String("order.id", order.OrderID))
+
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
 		time.Sleep(50 * time.Millisecond)
@@ -413,8 +415,6 @@ func main() {
 		}
 
 		// Create a message with context that will propagate the trace
-		// Using the processingCtx with the parent span information
-		// This will maintain the trace context across services
 		// Using WriteMessage (singular) instead of WriteMessages (plural) for proper tracing
 		// See: https://github.com/Trendyol/otel-kafka-konsumer/issues/4
 		kafkaMsg := kafka.Message{
@@ -431,6 +431,7 @@ func main() {
 				zap.Error(err),
 				zap.String("order_id", order.OrderID),
 			)
+			span.RecordError(err)
 		} else {
 			AppLogger.Info("📤 Sent PackagingCompleted event", zap.String("order_id", order.OrderID))
 		}
