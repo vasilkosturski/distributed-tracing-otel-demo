@@ -386,7 +386,13 @@ func main() {
 		// Create a message with context that will propagate the trace
 		// The Kafka writer will automatically propagate trace context to message headers
 		// when TextMapPropagator is properly set up
-		err = writer.WriteMessages(ctx, []kafka.Message{{Value: payload, Key: []byte(order.OrderID)}})
+		// Using WriteMessage (singular) instead of WriteMessages (plural) for proper tracing
+		// See: https://github.com/Trendyol/otel-kafka-konsumer/issues/4
+		kafkaMsg := kafka.Message{
+			Value: payload,
+			Key:   []byte(order.OrderID),
+		}
+		err = writer.WriteMessage(ctx, kafkaMsg)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				AppLogger.Info("Context done, aborting Kafka write.", zap.Error(err))
