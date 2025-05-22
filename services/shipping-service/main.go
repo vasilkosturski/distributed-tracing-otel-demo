@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace" // SDK for traces
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -368,8 +369,15 @@ func main() {
 		msgCtx := propagator.Extract(ctx, carrier)
 
 		// Create a span for processing this message - now linked to the parent trace
-		processingCtx, span := tp.Tracer("shipping-service").Start(msgCtx, "process-order-event")
-		defer span.End()
+		// Using a clearer name that will show up nicely in the UI
+		processingCtx, span := tp.Tracer("shipping-service").Start(msgCtx, "order-packaging",
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.operation", "process"),
+				attribute.String("messaging.system", "kafka"),
+			),
+		)
+		defer span.End() // This will end the span after all processing is complete
 
 		AppLogger.Info("📨 Raw Kafka message received",
 			zap.ByteString("key", msg.Key),
