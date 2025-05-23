@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace" // SDK for traces
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -368,16 +367,6 @@ func main() {
 		// Extract the context from the carrier - this will have the parent span info
 		msgCtx := propagator.Extract(ctx, carrier)
 
-		// Create a single processing span that will be the parent of the automatic Kafka send span
-		processingCtx, span := tp.Tracer("shipping-service").Start(msgCtx, "process-shipping",
-			trace.WithSpanKind(trace.SpanKindConsumer),
-			trace.WithAttributes(
-				attribute.String("messaging.operation", "process"),
-				attribute.String("messaging.system", "kafka"),
-			),
-		)
-		defer span.End()
-
 		AppLogger.Info("📨 Raw Kafka message received",
 			zap.ByteString("key", msg.Key),
 			zap.Int("partition", msg.Partition),
@@ -390,13 +379,8 @@ func main() {
 				zap.Error(err),
 				zap.ByteString("raw_value", msg.Value),
 			)
-			span.RecordError(err)
-			span.End() // End the span early on error
 			continue
 		}
-
-		// Add the order ID as an attribute to the span
-		span.SetAttributes(attribute.String("order.id", order.OrderID))
 
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
@@ -409,8 +393,6 @@ func main() {
 				zap.Error(err),
 				zap.String("order_id", order.OrderID),
 			)
-			span.RecordError(err)
-			span.End() // End the span early on error
 			continue
 		}
 
@@ -421,7 +403,7 @@ func main() {
 			Value: payload,
 			Key:   []byte(order.OrderID),
 		}
-		err = writer.WriteMessage(processingCtx, kafkaMsg)
+		err = writer.WriteMessage(msgCtx, kafkaMsg)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				AppLogger.Info("Context done, aborting Kafka write.", zap.Error(err))
@@ -431,7 +413,6 @@ func main() {
 				zap.Error(err),
 				zap.String("order_id", order.OrderID),
 			)
-			span.RecordError(err)
 		} else {
 			AppLogger.Info("📤 Sent PackagingCompleted event", zap.String("order_id", order.OrderID))
 		}
