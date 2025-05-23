@@ -350,7 +350,6 @@ func main() {
 				break
 			}
 			AppLogger.Error("❌ Error reading from Kafka", zap.Error(err))
-			time.Sleep(1 * time.Second)
 			continue
 		}
 
