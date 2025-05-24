@@ -10,6 +10,16 @@ services:
     ports:
       - "5432:5432"
 
+  postgres-mcp:
+    image: crystaldba/postgres-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URI=postgresql://postgres:password@postgres:5432/orders_db
+    command: ["--access-mode=unrestricted", "--transport=sse"]
+    depends_on:
+      - postgres
+
   kafka:
     image: bitnami/kafka:3.9.0
     ports:
