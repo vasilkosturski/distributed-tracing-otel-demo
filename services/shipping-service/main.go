@@ -385,7 +385,7 @@ func main() {
 
 		time.Sleep(50 * time.Millisecond)
 
-		out := PackagingCompletedEvent{OrderID: order.OrderID}
+		out := PackagingCompletedEvent(order)
 		payload, err := json.Marshal(out)
 		if err != nil {
 			AppLogger.Error("❌ Failed to serialize PackagingCompleted event",
