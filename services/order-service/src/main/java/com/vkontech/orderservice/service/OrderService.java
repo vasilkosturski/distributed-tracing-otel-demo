@@ -73,11 +73,11 @@ public class OrderService {
         }
     }
 
-    public void markOrderAsPackaged(UUID orderId) {
-        logger.info("Marking order {} as PACKAGED", orderId);
+    public void markOrderAsInventoryReserved(UUID orderId) {
+        logger.info("Marking order {} as INVENTORY_RESERVED", orderId);
         jdbcTemplate.update(
                 "UPDATE orders SET status = ? WHERE id = ?",
-                "PACKAGED", orderId
+                "INVENTORY_RESERVED", orderId
         );
     }
 }

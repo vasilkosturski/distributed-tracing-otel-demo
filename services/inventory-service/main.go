@@ -22,8 +22,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace" // SDK for traces
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"      // SDK for traces
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0" // Add this for SpanFromContext
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -31,8 +31,8 @@ import (
 var (
 	kafkaBrokerAddress = "localhost:9092"
 	orderCreatedTopic  = "OrderCreated"
-	packagingTopic     = "PackagingCompleted"
-	groupID            = "shipping-service-group"
+	inventoryTopic     = "InventoryReserved"
+	groupID            = "inventory-service-group"
 
 	AppLogger *zap.Logger // Global ZapLogger
 )
@@ -41,7 +41,7 @@ type OrderCreatedEvent struct {
 	OrderID string `json:"order_id"`
 }
 
-type PackagingCompletedEvent struct {
+type InventoryReservedEvent struct {
 	OrderID string `json:"order_id"`
 }
 
@@ -77,7 +77,7 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("shipping-service"),
+			semconv.ServiceName("inventory-service"),
 			semconv.ServiceVersion("0.1.0"),
 		),
 	)
@@ -114,7 +114,7 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 		addShutdown("LoggerProvider", lp.Shutdown)
 		// AppLogger might not be initialized yet when this is first called.
 		// Consider logging this success message after AppLogger is fully re-initialized in main().
-		// fmt.Println("✅ OTel LoggerProvider initialized for shipping-service.")
+		// fmt.Println("✅ OTel LoggerProvider initialized for inventory-service.")
 	} else {
 		// If exporter failed, we might not want to proceed with setting up the LoggerProvider
 		// or we set a no-op one. For now, currentErr will have the exporter error.
@@ -155,7 +155,7 @@ func setupTracingOTelSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shut
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("shipping-service"),
+			semconv.ServiceName("inventory-service"),
 			semconv.ServiceVersion("0.1.0"),
 		),
 	)
@@ -221,7 +221,7 @@ func main() {
 			_ = AppLogger.Sync()
 		}
 	}()
-	AppLogger.Info("Shipping Service attempting to start (initial console logger)...")
+	AppLogger.Info("Inventory Service attempting to start (initial console logger)...")
 
 	// Setup logging SDK
 	otelLogShutdown, otelLogSetupErr := setupLoggingOTelSDK(ctx)
@@ -258,8 +258,8 @@ func main() {
 	}
 
 	// Re-initialize AppLogger with OTel bridge (official contrib) and console tee
-	logProvider := global.GetLoggerProvider()             // Will be a no-op if OTel setup failed
-	instrumentationScopeName := "shipping-service.manual" // Customize this
+	logProvider := global.GetLoggerProvider()              // Will be a no-op if OTel setup failed
+	instrumentationScopeName := "inventory-service.manual" // Customize this
 	otelZapCore := otelzap.NewCore(instrumentationScopeName,
 		otelzap.WithLoggerProvider(logProvider),
 	)
@@ -276,15 +276,15 @@ func main() {
 	AppLogger = zap.New(finalCore,
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
-		zap.Fields(zap.String("service.name", "shipping-service")),
+		zap.Fields(zap.String("service.name", "inventory-service")),
 	)
-	AppLogger.Info("🚀 Shipping Service Zap logger re-initialized with OTel bridge and console output.")
+	AppLogger.Info("🚀 Inventory Service Zap logger re-initialized with OTel bridge and console output.")
 
 	// --- Service Logs ---
 	AppLogger.Info("Connecting to Kafka", zap.String("broker", kafkaBrokerAddress))
 	AppLogger.Info("Configured topics",
 		zap.String("consumer_topic", orderCreatedTopic),
-		zap.String("producer_topic", packagingTopic),
+		zap.String("producer_topic", inventoryTopic),
 	)
 
 	// --- Kafka Setup with OTel instrumentation ---
@@ -293,7 +293,6 @@ func main() {
 		Brokers: []string{kafkaBrokerAddress},
 		Topic:   orderCreatedTopic,
 		GroupID: groupID,
-		MaxWait: 1 * time.Second,
 	}
 
 	// Create the base reader first, then wrap with OTel instrumentation
@@ -313,7 +312,7 @@ func main() {
 
 	baseWriter := &kafka.Writer{
 		Addr:     kafka.TCP(kafkaBrokerAddress),
-		Topic:    packagingTopic,
+		Topic:    inventoryTopic,
 		Balancer: &kafka.LeastBytes{},
 	}
 
@@ -323,8 +322,8 @@ func main() {
 		otelkafka.WithPropagator(propagation.TraceContext{}),
 		otelkafka.WithAttributes(
 			[]attribute.KeyValue{
-				semconv.MessagingDestinationNameKey.String(packagingTopic),
-				attribute.String("messaging.kafka.client_id", "shipping-service"),
+				semconv.MessagingDestinationNameKey.String(inventoryTopic),
+				attribute.String("messaging.kafka.client_id", "inventory-service"),
 			},
 		),
 	)
@@ -383,12 +382,14 @@ func main() {
 
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
-		time.Sleep(50 * time.Millisecond)
+		// Simulate inventory check (in real system this would check stock levels)
+		AppLogger.Info("🔍 Checking inventory for order", zap.String("order_id", order.OrderID))
+		time.Sleep(50 * time.Millisecond) // Simulate inventory lookup time
 
-		out := PackagingCompletedEvent(order)
+		out := InventoryReservedEvent(order)
 		payload, err := json.Marshal(out)
 		if err != nil {
-			AppLogger.Error("❌ Failed to serialize PackagingCompleted event",
+			AppLogger.Error("❌ Failed to serialize InventoryReserved event",
 				zap.Error(err),
 				zap.String("order_id", order.OrderID),
 			)
@@ -408,14 +409,14 @@ func main() {
 				AppLogger.Info("Context done, aborting Kafka write.", zap.Error(err))
 				break
 			}
-			AppLogger.Error("❌ Failed to publish PackagingCompleted event",
+			AppLogger.Error("❌ Failed to publish InventoryReserved event",
 				zap.Error(err),
 				zap.String("order_id", order.OrderID),
 			)
 		} else {
-			AppLogger.Info("📤 Sent PackagingCompleted event", zap.String("order_id", order.OrderID))
+			AppLogger.Info("📤 Sent InventoryReserved event", zap.String("order_id", order.OrderID))
 		}
 	}
 
-	AppLogger.Info("Shipping Service event loop finished. Shutting down...")
+	AppLogger.Info("Inventory Service event loop finished. Shutting down...")
 }

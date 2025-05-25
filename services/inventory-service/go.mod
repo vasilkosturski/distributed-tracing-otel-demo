@@ -1,4 +1,4 @@
-module shippingservice
+module inventoryservice
 
 go 1.24
 
