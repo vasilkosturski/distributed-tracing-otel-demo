@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelzap" // Official OTel Contrib bridge for Zap
 	"go.opentelemetry.io/otel"                    // OpenTelemetry API
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"     // OTLP HTTP for Logs
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp" // OTLP HTTP for Traces
 	"go.opentelemetry.io/otel/log/global"
@@ -384,9 +385,40 @@ func main() {
 
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
+		// Create a custom span for inventory checking to demonstrate manual tracing
+		tracer := otel.Tracer("inventory-service")
+		_, span := tracer.Start(msgCtx, "inventory_check")
+
+		// Add custom attributes to the span
+		span.SetAttributes(
+			attribute.String("order.id", order.OrderID),
+			attribute.String("inventory.operation", "stock_check"),
+			attribute.String("service.component", "inventory_manager"),
+		)
+
 		// Simulate inventory check (in real system this would check stock levels)
 		AppLogger.Info("🔍 Checking inventory for order", zap.String("order_id", order.OrderID))
+
+		// Simulate some inventory lookup logic with realistic attributes
 		time.Sleep(50 * time.Millisecond) // Simulate inventory lookup time
+
+		// In a real system, you'd query a database or external service here
+		// For demo purposes, we'll simulate successful inventory check
+		stockAvailable := true
+		reservedQuantity := 1
+
+		// Add more business-specific attributes
+		span.SetAttributes(
+			attribute.Bool("inventory.available", stockAvailable),
+			attribute.Int("inventory.reserved_quantity", reservedQuantity),
+			attribute.String("inventory.status", "reserved"),
+		)
+
+		// Mark the span as successful
+		span.SetStatus(codes.Ok, "Inventory successfully reserved")
+
+		// End the custom span
+		span.End()
 
 		out := InventoryReservedEvent(order)
 		payload, err := json.Marshal(out)
