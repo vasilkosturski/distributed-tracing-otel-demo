@@ -311,9 +311,11 @@ func main() {
 	}()
 
 	baseWriter := &kafka.Writer{
-		Addr:     kafka.TCP(kafkaBrokerAddress),
-		Topic:    inventoryTopic,
-		Balancer: &kafka.LeastBytes{},
+		Addr:         kafka.TCP(kafkaBrokerAddress),
+		Topic:        inventoryTopic,
+		Balancer:     &kafka.LeastBytes{},
+		BatchTimeout: 10 * time.Millisecond, // Quick batching
+		BatchSize:    100,                   // Small batch size for low latency
 	}
 
 	// Then create the writer with the direct tp instance
