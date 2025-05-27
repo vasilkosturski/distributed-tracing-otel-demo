@@ -7,6 +7,7 @@ import (
 	"inventoryservice/config"
 	"inventoryservice/events"
 	"inventoryservice/observability"
+	"inventoryservice/services"
 	stdlog "log" // Alias standard log to prevent conflict
 	"os"
 	"os/signal"
@@ -20,7 +21,6 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelzap" // Official OTel Contrib bridge for Zap
 	"go.opentelemetry.io/otel"                    // OpenTelemetry API
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes" // OTLP HTTP for Logs
 
 	// OTLP HTTP for Traces
 	"go.opentelemetry.io/otel/log/global"
@@ -107,6 +107,9 @@ func main() {
 		zap.Fields(zap.String("service.name", config.ServiceName)),
 	)
 	AppLogger.Info("🚀 Inventory Service Zap logger re-initialized with OTel bridge and console output.")
+
+	// Initialize inventory service
+	inventoryService := services.NewInventoryService(AppLogger, config.ServiceName)
 
 	// --- Service Logs ---
 	AppLogger.Info("Connecting to Kafka", zap.String("broker", config.KafkaBrokerAddress))
@@ -212,42 +215,16 @@ func main() {
 
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
-		// Create a custom span for inventory checking to demonstrate manual tracing
-		tracer := otel.Tracer(config.ServiceName)
-		_, span := tracer.Start(msgCtx, "inventory_check")
+		// Process the order through the inventory service
+		reservedEvent, err := inventoryService.ProcessOrderCreated(msgCtx, order)
+		if err != nil {
+			AppLogger.Error("❌ Failed to process order", zap.Error(err), zap.String("order_id", order.OrderID))
+			continue
+		}
 
-		// Add custom attributes to the span
-		span.SetAttributes(
-			attribute.String("order.id", order.OrderID),
-			attribute.String("inventory.operation", "stock_check"),
-			attribute.String("service.component", "inventory_manager"),
-		)
+		AppLogger.Info("✅ Inventory reserved", zap.String("order_id", reservedEvent.OrderID))
 
-		// Simulate inventory check (in real system this would check stock levels)
-		AppLogger.Info("🔍 Checking inventory for order", zap.String("order_id", order.OrderID))
-
-		// Simulate some inventory lookup logic with realistic attributes
-		time.Sleep(50 * time.Millisecond) // Simulate inventory lookup time
-
-		// In a real system, you'd query a database or external service here
-		// For demo purposes, we'll simulate successful inventory check
-		stockAvailable := true
-		reservedQuantity := 1
-
-		// Add more business-specific attributes
-		span.SetAttributes(
-			attribute.Bool("inventory.available", stockAvailable),
-			attribute.Int("inventory.reserved_quantity", reservedQuantity),
-			attribute.String("inventory.status", "reserved"),
-		)
-
-		// Mark the span as successful
-		span.SetStatus(codes.Ok, "Inventory successfully reserved")
-
-		// End the custom span
-		span.End()
-
-		out := events.InventoryReservedEvent(order)
+		out := *reservedEvent
 		payload, err := json.Marshal(out)
 		if err != nil {
 			AppLogger.Error("❌ Failed to serialize InventoryReserved event",
