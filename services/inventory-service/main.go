@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"inventoryservice/config"
 	stdlog "log" // Alias standard log to prevent conflict
 	"os"
 	"os/signal"
 	"time"
+
+	// Local config package
 
 	otelkafka "github.com/Trendyol/otel-kafka-konsumer" // OpenTelemetry Kafka instrumentation
 	"github.com/segmentio/kafka-go"
@@ -30,11 +33,6 @@ import (
 )
 
 var (
-	kafkaBrokerAddress = "localhost:9092"
-	orderCreatedTopic  = "OrderCreated"
-	inventoryTopic     = "InventoryReserved"
-	groupID            = "inventory-service-group"
-
 	AppLogger *zap.Logger // Global ZapLogger
 )
 
@@ -78,8 +76,8 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("inventory-service"),
-			semconv.ServiceVersion("0.1.0"),
+			semconv.ServiceName(config.ServiceName),
+			semconv.ServiceVersion(config.ServiceVersion),
 		),
 	)
 	if err != nil { // If resource creation fails, we can't proceed
@@ -87,14 +85,13 @@ func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) er
 	}
 
 	// --- Common OTLP/HTTP Exporter Options ---
-	// Ensure this token is the same one working in your Dice Roller app
-	grafanaAuthHeader := map[string]string{"Authorization": "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ=="}
-	grafanaBaseEndpoint := "otlp-gateway-prod-eu-west-2.grafana.net" // Base hostname
+	grafanaAuthHeader := map[string]string{"Authorization": config.GrafanaAuthHeader}
+	grafanaBaseEndpoint := config.GrafanaBaseEndpoint
 
 	// 2. Setup Logger Provider using OTLP/HTTP (for Zap bridge)
 	logExporter, errExporter := otlploghttp.New(ctx,
 		otlploghttp.WithEndpoint(grafanaBaseEndpoint),
-		otlploghttp.WithURLPath("/otlp/v1/logs"), // <<< CORRECTED PATH
+		otlploghttp.WithURLPath(config.LogsPath),
 		otlploghttp.WithHeaders(grafanaAuthHeader),
 	)
 	handleErr("OTLP Log Exporter", errExporter) // Pass errExporter here
@@ -156,8 +153,8 @@ func setupTracingOTelSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shut
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("inventory-service"),
-			semconv.ServiceVersion("0.1.0"),
+			semconv.ServiceName(config.ServiceName),
+			semconv.ServiceVersion(config.ServiceVersion),
 		),
 	)
 	if err != nil { // If resource creation fails, we can't proceed
@@ -172,14 +169,13 @@ func setupTracingOTelSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shut
 	))
 
 	// --- Common OTLP/HTTP Exporter Options ---
-	// Using the same auth as logs
-	grafanaAuthHeader := map[string]string{"Authorization": "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YlhrdGIzUnNjQzFoWTJObGMzTXRkRzlyWlc0dE1pSXNJbXNpT2lKS01teDNWVEkzYkcwd01IbzJNVEpGU0RoUFZUQnVjVllpTENKdElqcDdJbklpT2lKd2NtOWtMV1YxTFhkbGMzUXRNaUo5ZlE9PQ=="}
-	grafanaBaseEndpoint := "otlp-gateway-prod-eu-west-2.grafana.net" // Base hostname
+	grafanaAuthHeader := map[string]string{"Authorization": config.GrafanaAuthHeader}
+	grafanaBaseEndpoint := config.GrafanaBaseEndpoint
 
 	// 2. Setup Trace Exporter using OTLP/HTTP
 	traceExporter, errExporter := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpoint(grafanaBaseEndpoint),
-		otlptracehttp.WithURLPath("/otlp/v1/traces"), // Path for traces
+		otlptracehttp.WithURLPath(config.TracesPath),
 		otlptracehttp.WithHeaders(grafanaAuthHeader),
 	)
 	handleErr("OTLP Trace Exporter", errExporter)
@@ -277,23 +273,23 @@ func main() {
 	AppLogger = zap.New(finalCore,
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
-		zap.Fields(zap.String("service.name", "inventory-service")),
+		zap.Fields(zap.String("service.name", config.ServiceName)),
 	)
 	AppLogger.Info("🚀 Inventory Service Zap logger re-initialized with OTel bridge and console output.")
 
 	// --- Service Logs ---
-	AppLogger.Info("Connecting to Kafka", zap.String("broker", kafkaBrokerAddress))
+	AppLogger.Info("Connecting to Kafka", zap.String("broker", config.KafkaBrokerAddress))
 	AppLogger.Info("Configured topics",
-		zap.String("consumer_topic", orderCreatedTopic),
-		zap.String("producer_topic", inventoryTopic),
+		zap.String("consumer_topic", config.OrderCreatedTopic),
+		zap.String("producer_topic", config.InventoryTopic),
 	)
 
 	// --- Kafka Setup with OTel instrumentation ---
 	// Create a base reader config
 	readerConfig := kafka.ReaderConfig{
-		Brokers: []string{kafkaBrokerAddress},
-		Topic:   orderCreatedTopic,
-		GroupID: groupID,
+		Brokers: []string{config.KafkaBrokerAddress},
+		Topic:   config.OrderCreatedTopic,
+		GroupID: config.GroupID,
 	}
 
 	// Create the base reader first, then wrap with OTel instrumentation
@@ -312,8 +308,8 @@ func main() {
 	}()
 
 	baseWriter := &kafka.Writer{
-		Addr:         kafka.TCP(kafkaBrokerAddress),
-		Topic:        inventoryTopic,
+		Addr:         kafka.TCP(config.KafkaBrokerAddress),
+		Topic:        config.InventoryTopic,
 		Balancer:     &kafka.LeastBytes{},
 		BatchTimeout: 10 * time.Millisecond, // Quick batching
 		BatchSize:    100,                   // Small batch size for low latency
@@ -325,8 +321,8 @@ func main() {
 		otelkafka.WithPropagator(propagation.TraceContext{}),
 		otelkafka.WithAttributes(
 			[]attribute.KeyValue{
-				semconv.MessagingDestinationNameKey.String(inventoryTopic),
-				attribute.String("messaging.kafka.client_id", "inventory-service"),
+				semconv.MessagingDestinationNameKey.String(config.InventoryTopic),
+				attribute.String("messaging.kafka.client_id", config.ServiceName),
 			},
 		),
 	)
@@ -386,7 +382,7 @@ func main() {
 		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
 
 		// Create a custom span for inventory checking to demonstrate manual tracing
-		tracer := otel.Tracer("inventory-service")
+		tracer := otel.Tracer(config.ServiceName)
 		_, span := tracer.Start(msgCtx, "inventory_check")
 
 		// Add custom attributes to the span
