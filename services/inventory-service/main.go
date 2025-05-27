@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"inventoryservice/config"
+	"inventoryservice/events"
 	stdlog "log" // Alias standard log to prevent conflict
 	"os"
 	"os/signal"
@@ -35,14 +36,6 @@ import (
 var (
 	AppLogger *zap.Logger // Global ZapLogger
 )
-
-type OrderCreatedEvent struct {
-	OrderID string `json:"order_id"`
-}
-
-type InventoryReservedEvent struct {
-	OrderID string `json:"order_id"`
-}
 
 // setupLoggingOTelSDK configures OpenTelemetry SDK specifically for LOGS.
 func setupLoggingOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
@@ -370,7 +363,7 @@ func main() {
 			zap.Int64("offset", msg.Offset),
 		)
 
-		var order OrderCreatedEvent
+		var order events.OrderCreatedEvent
 		if err := json.Unmarshal(msg.Value, &order); err != nil {
 			AppLogger.Error("❌ Invalid JSON in OrderCreated event",
 				zap.Error(err),
@@ -416,7 +409,7 @@ func main() {
 		// End the custom span
 		span.End()
 
-		out := InventoryReservedEvent(order)
+		out := events.InventoryReservedEvent(order)
 		payload, err := json.Marshal(out)
 		if err != nil {
 			AppLogger.Error("❌ Failed to serialize InventoryReserved event",
