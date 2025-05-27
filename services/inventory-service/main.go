@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"inventoryservice/config"
-	"inventoryservice/events"
+	"inventoryservice/handlers"
 	"inventoryservice/observability"
 	"inventoryservice/services"
 	stdlog "log" // Alias standard log to prevent conflict
@@ -19,7 +18,6 @@ import (
 	"github.com/segmentio/kafka-go"
 
 	"go.opentelemetry.io/contrib/bridges/otelzap" // Official OTel Contrib bridge for Zap
-	"go.opentelemetry.io/otel"                    // OpenTelemetry API
 	"go.opentelemetry.io/otel/attribute"
 
 	// OTLP HTTP for Traces
@@ -172,6 +170,9 @@ func main() {
 		}
 	}()
 
+	// Initialize message handler
+	messageHandler := handlers.NewMessageHandler(inventoryService, writer, AppLogger)
+
 	AppLogger.Info("Kafka consumer started. Waiting for messages...")
 
 	for {
@@ -185,74 +186,10 @@ func main() {
 			continue
 		}
 
-		// Extract trace context from the incoming Kafka message headers
-		// This is important for connecting the trace from the producer
-		propagator := otel.GetTextMapPropagator()
-		carrier := propagation.MapCarrier{}
-
-		// Extract headers from Kafka message to our carrier
-		for _, header := range msg.Headers {
-			carrier[string(header.Key)] = string(header.Value)
-		}
-
-		// Extract the context from the carrier - this will have the parent span info
-		msgCtx := propagator.Extract(ctx, carrier)
-
-		AppLogger.Info("📨 Raw Kafka message received",
-			zap.ByteString("key", msg.Key),
-			zap.Int("partition", msg.Partition),
-			zap.Int64("offset", msg.Offset),
-		)
-
-		var order events.OrderCreatedEvent
-		if err := json.Unmarshal(msg.Value, &order); err != nil {
-			AppLogger.Error("❌ Invalid JSON in OrderCreated event",
-				zap.Error(err),
-				zap.ByteString("raw_value", msg.Value),
-			)
+		// Handle the message using the message handler
+		if err := messageHandler.HandleOrderCreated(ctx, *msg); err != nil {
+			// Error is already logged in the handler, just continue to next message
 			continue
-		}
-
-		AppLogger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
-
-		// Process the order through the inventory service
-		reservedEvent, err := inventoryService.ProcessOrderCreated(msgCtx, order)
-		if err != nil {
-			AppLogger.Error("❌ Failed to process order", zap.Error(err), zap.String("order_id", order.OrderID))
-			continue
-		}
-
-		AppLogger.Info("✅ Inventory reserved", zap.String("order_id", reservedEvent.OrderID))
-
-		out := *reservedEvent
-		payload, err := json.Marshal(out)
-		if err != nil {
-			AppLogger.Error("❌ Failed to serialize InventoryReserved event",
-				zap.Error(err),
-				zap.String("order_id", order.OrderID),
-			)
-			continue
-		}
-
-		// Create a message with context that will propagate the trace
-		// Using WriteMessage (singular) instead of WriteMessages (plural) for proper tracing
-		// See: https://github.com/Trendyol/otel-kafka-konsumer/issues/4
-		kafkaMsg := kafka.Message{
-			Value: payload,
-			Key:   []byte(order.OrderID),
-		}
-		err = writer.WriteMessage(msgCtx, kafkaMsg)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				AppLogger.Info("Context done, aborting Kafka write.", zap.Error(err))
-				break
-			}
-			AppLogger.Error("❌ Failed to publish InventoryReserved event",
-				zap.Error(err),
-				zap.String("order_id", order.OrderID),
-			)
-		} else {
-			AppLogger.Info("📤 Sent InventoryReserved event", zap.String("order_id", order.OrderID))
 		}
 	}
 

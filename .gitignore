@@ -2,3 +2,4 @@
 .DS_Store
 __debug_bin*
 inventoryservice
+services/inventory-service/inventory-service
