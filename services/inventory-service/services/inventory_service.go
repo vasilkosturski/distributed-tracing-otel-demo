@@ -6,24 +6,34 @@ import (
 
 	"inventoryservice/events"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-// InventoryService handles inventory-related business logic
-type InventoryService struct {
-	logger *zap.Logger
-	tracer trace.Tracer
+// Logger interface defines what the service needs for logging
+type Logger interface {
+	Info(msg string, fields ...zap.Field)
+	Error(msg string, fields ...zap.Field)
 }
 
-// NewInventoryService creates a new InventoryService instance
-func NewInventoryService(logger *zap.Logger, serviceName string) *InventoryService {
+// Tracer interface defines what the service needs for tracing
+type Tracer interface {
+	Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span)
+}
+
+// InventoryService handles inventory-related business logic
+type InventoryService struct {
+	logger Logger
+	tracer Tracer
+}
+
+// NewInventoryService creates a new InventoryService instance with explicit dependencies
+func NewInventoryService(logger Logger, tracer Tracer) *InventoryService {
 	return &InventoryService{
 		logger: logger,
-		tracer: otel.Tracer(serviceName),
+		tracer: tracer,
 	}
 }
 

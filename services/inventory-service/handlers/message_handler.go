@@ -5,27 +5,41 @@ import (
 	"encoding/json"
 
 	"inventoryservice/events"
-	"inventoryservice/services"
 
-	otelkafka "github.com/Trendyol/otel-kafka-konsumer"
 	"github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
-// MessageHandler handles Kafka message processing
-type MessageHandler struct {
-	inventoryService *services.InventoryService
-	writer           *otelkafka.Writer
-	logger           *zap.Logger
+// Logger interface defines what the handler needs for logging
+type Logger interface {
+	Info(msg string, fields ...zap.Field)
+	Error(msg string, fields ...zap.Field)
 }
 
-// NewMessageHandler creates a new MessageHandler instance
-func NewMessageHandler(inventoryService *services.InventoryService, writer *otelkafka.Writer, logger *zap.Logger) *MessageHandler {
+// InventoryService interface defines the business logic the handler depends on
+type InventoryService interface {
+	ProcessOrderCreated(ctx context.Context, order events.OrderCreatedEvent) (*events.InventoryReservedEvent, error)
+}
+
+// MessageProducer interface defines message publishing capabilities
+type MessageProducer interface {
+	WriteMessage(ctx context.Context, msg kafka.Message) error
+}
+
+// MessageHandler handles Kafka message processing
+type MessageHandler struct {
+	inventoryService InventoryService
+	producer         MessageProducer
+	logger           Logger
+}
+
+// NewMessageHandler creates a new MessageHandler instance with explicit dependencies
+func NewMessageHandler(inventoryService InventoryService, producer MessageProducer, logger Logger) *MessageHandler {
 	return &MessageHandler{
 		inventoryService: inventoryService,
-		writer:           writer,
+		producer:         producer,
 		logger:           logger,
 	}
 }
@@ -83,14 +97,12 @@ func (h *MessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.Messa
 	}
 
 	// Create a message with context that will propagate the trace
-	// Using WriteMessage (singular) instead of WriteMessages (plural) for proper tracing
-	// See: https://github.com/Trendyol/otel-kafka-konsumer/issues/4
 	kafkaMsg := kafka.Message{
 		Value: payload,
 		Key:   []byte(order.OrderID),
 	}
 
-	if err := h.writer.WriteMessage(msgCtx, kafkaMsg); err != nil {
+	if err := h.producer.WriteMessage(msgCtx, kafkaMsg); err != nil {
 		h.logger.Error("❌ Failed to publish InventoryReserved event",
 			zap.Error(err),
 			zap.String("order_id", order.OrderID),
