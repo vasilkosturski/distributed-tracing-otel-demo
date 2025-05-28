@@ -24,68 +24,70 @@ import (
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"             // SDK for traces
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0" // Add this for SpanFromContext
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	AppLogger *zap.Logger // Global ZapLogger
-)
+// Application holds all the components and manages the application lifecycle
+type Application struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	logger *zap.Logger
 
-func main() {
+	// OpenTelemetry shutdown functions
+	otelLogShutdown   func(context.Context) error
+	otelTraceShutdown func(context.Context) error
+
+	// Business components
+	inventoryService *services.InventoryService
+	messageHandler   *handlers.MessageHandler
+
+	// Kafka components
+	reader *otelkafka.Reader
+	writer *otelkafka.Writer
+}
+
+// NewApplication creates a new Application instance
+func NewApplication() *Application {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer cancel()
+	return &Application{
+		ctx:    ctx,
+		cancel: cancel,
+	}
+}
 
+// Initialize sets up all the application components
+func (app *Application) Initialize() error {
 	var err error
 
-	AppLogger, err = zap.NewProduction() // Fallback console logger
+	// Initialize fallback logger
+	app.logger, err = zap.NewProduction()
 	if err != nil {
-		stdlog.Fatalf("❌ Failed to initialize fallback zap logger: %v\n", err)
+		return err
 	}
-	defer func() {
-		if AppLogger != nil {
-			_ = AppLogger.Sync()
-		}
-	}()
-	AppLogger.Info("Inventory Service attempting to start (initial console logger)...")
+	app.logger.Info("Inventory Service attempting to start (initial console logger)...")
 
 	// Setup logging SDK
-	otelLogShutdown, otelLogSetupErr := observability.SetupLoggingSDK(ctx)
-	if otelLogSetupErr != nil {
-		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for logging completely", zap.Error(otelLogSetupErr))
+	app.otelLogShutdown, err = observability.SetupLoggingSDK(app.ctx)
+	if err != nil {
+		app.logger.Error("⚠️ Failed to setup OpenTelemetry SDK for logging completely", zap.Error(err))
 	} else {
-		AppLogger.Info("✅ OpenTelemetry SDK for logging initialized (or partially).")
-	}
-	if otelLogShutdown != nil {
-		defer func() {
-			AppLogger.Info("Shutting down OpenTelemetry SDK for logging...")
-			if shutdownErr := otelLogShutdown(context.Background()); shutdownErr != nil {
-				AppLogger.Error("❌ Error during OTel logging SDK shutdown", zap.Error(shutdownErr))
-			}
-			AppLogger.Info("OTel logging SDK shutdown complete.")
-		}()
+		app.logger.Info("✅ OpenTelemetry SDK for logging initialized (or partially).")
 	}
 
 	// Setup tracing SDK
-	tp, otelTraceShutdown, otelTraceSetupErr := observability.SetupTracingSDK(ctx)
-	if otelTraceSetupErr != nil {
-		AppLogger.Error("⚠️ Failed to setup OpenTelemetry SDK for tracing completely", zap.Error(otelTraceSetupErr))
+	tp, otelTraceShutdown, err := observability.SetupTracingSDK(app.ctx)
+	app.otelTraceShutdown = otelTraceShutdown
+	if err != nil {
+		app.logger.Error("⚠️ Failed to setup OpenTelemetry SDK for tracing completely", zap.Error(err))
 	} else {
-		AppLogger.Info("✅ OpenTelemetry SDK for tracing initialized (or partially).")
-	}
-	if otelTraceShutdown != nil {
-		defer func() {
-			AppLogger.Info("Shutting down OpenTelemetry SDK for tracing...")
-			if shutdownErr := otelTraceShutdown(context.Background()); shutdownErr != nil {
-				AppLogger.Error("❌ Error during OTel tracing SDK shutdown", zap.Error(shutdownErr))
-			}
-			AppLogger.Info("OTel tracing SDK shutdown complete.")
-		}()
+		app.logger.Info("✅ OpenTelemetry SDK for tracing initialized (or partially).")
 	}
 
-	// Re-initialize AppLogger with OTel bridge (official contrib) and console tee
-	logProvider := global.GetLoggerProvider()              // Will be a no-op if OTel setup failed
-	instrumentationScopeName := "inventory-service.manual" // Customize this
+	// Re-initialize logger with OTel bridge
+	logProvider := global.GetLoggerProvider()
+	instrumentationScopeName := "inventory-service.manual"
 	otelZapCore := otelzap.NewCore(instrumentationScopeName,
 		otelzap.WithLoggerProvider(logProvider),
 	)
@@ -99,55 +101,58 @@ func main() {
 	)
 
 	finalCore := zapcore.NewTee(otelZapCore, consoleCore)
-	AppLogger = zap.New(finalCore,
+	app.logger = zap.New(finalCore,
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
 		zap.Fields(zap.String("service.name", config.ServiceName)),
 	)
-	AppLogger.Info("🚀 Inventory Service Zap logger re-initialized with OTel bridge and console output.")
+	app.logger.Info("🚀 Inventory Service Zap logger re-initialized with OTel bridge and console output.")
 
 	// Initialize inventory service
-	inventoryService := services.NewInventoryService(AppLogger, config.ServiceName)
+	app.inventoryService = services.NewInventoryService(app.logger, config.ServiceName)
 
-	// --- Service Logs ---
-	AppLogger.Info("Connecting to Kafka", zap.String("broker", config.KafkaBrokerAddress))
-	AppLogger.Info("Configured topics",
+	// Setup Kafka components
+	if err := app.setupKafka(tp); err != nil {
+		return err
+	}
+
+	// Initialize message handler
+	app.messageHandler = handlers.NewMessageHandler(app.inventoryService, app.writer, app.logger)
+
+	return nil
+}
+
+// setupKafka initializes Kafka reader and writer with OTel instrumentation
+func (app *Application) setupKafka(tp trace.TracerProvider) error {
+	app.logger.Info("Connecting to Kafka", zap.String("broker", config.KafkaBrokerAddress))
+	app.logger.Info("Configured topics",
 		zap.String("consumer_topic", config.OrderCreatedTopic),
 		zap.String("producer_topic", config.InventoryTopic),
 	)
 
-	// --- Kafka Setup with OTel instrumentation ---
-	// Create a base reader config
+	// Create Kafka reader
 	readerConfig := kafka.ReaderConfig{
 		Brokers: []string{config.KafkaBrokerAddress},
 		Topic:   config.OrderCreatedTopic,
 		GroupID: config.GroupID,
 	}
 
-	// Create the base reader first, then wrap with OTel instrumentation
 	baseReader := kafka.NewReader(readerConfig)
 	reader, err := otelkafka.NewReader(baseReader)
 	if err != nil {
-		AppLogger.Error("❌ Failed to create instrumented Kafka reader", zap.Error(err))
-		return
+		return err
 	}
+	app.reader = reader
 
-	defer func() {
-		AppLogger.Info("Closing Kafka reader...")
-		if err := reader.Close(); err != nil {
-			AppLogger.Error("❌ Failed to close Kafka reader", zap.Error(err))
-		}
-	}()
-
+	// Create Kafka writer
 	baseWriter := &kafka.Writer{
 		Addr:         kafka.TCP(config.KafkaBrokerAddress),
 		Topic:        config.InventoryTopic,
 		Balancer:     &kafka.LeastBytes{},
-		BatchTimeout: 10 * time.Millisecond, // Quick batching
-		BatchSize:    100,                   // Small batch size for low latency
+		BatchTimeout: 10 * time.Millisecond,
+		BatchSize:    100,
 	}
 
-	// Then create the writer with the direct tp instance
 	writer, err := otelkafka.NewWriter(baseWriter,
 		otelkafka.WithTracerProvider(tp),
 		otelkafka.WithPropagator(propagation.TraceContext{}),
@@ -159,39 +164,97 @@ func main() {
 		),
 	)
 	if err != nil {
-		AppLogger.Error("❌ Failed to create instrumented Kafka writer", zap.Error(err))
-		return
+		return err
 	}
+	app.writer = writer
 
-	defer func() {
-		AppLogger.Info("Closing Kafka writer...")
-		if err := writer.Close(); err != nil {
-			AppLogger.Error("❌ Failed to close Kafka writer", zap.Error(err))
-		}
-	}()
+	return nil
+}
 
-	// Initialize message handler
-	messageHandler := handlers.NewMessageHandler(inventoryService, writer, AppLogger)
-
-	AppLogger.Info("Kafka consumer started. Waiting for messages...")
+// Run starts the main event processing loop
+func (app *Application) Run() error {
+	app.logger.Info("Kafka consumer started. Waiting for messages...")
 
 	for {
-		msg, err := reader.ReadMessage(ctx) // Using the cancellable context
+		msg, err := app.reader.ReadMessage(app.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				AppLogger.Info("Context done, exiting Kafka read loop.", zap.Error(err))
+				app.logger.Info("Context done, exiting Kafka read loop.", zap.Error(err))
 				break
 			}
-			AppLogger.Error("❌ Error reading from Kafka", zap.Error(err))
+			app.logger.Error("❌ Error reading from Kafka", zap.Error(err))
 			continue
 		}
 
 		// Handle the message using the message handler
-		if err := messageHandler.HandleOrderCreated(ctx, *msg); err != nil {
+		if err := app.messageHandler.HandleOrderCreated(app.ctx, *msg); err != nil {
 			// Error is already logged in the handler, just continue to next message
 			continue
 		}
 	}
 
-	AppLogger.Info("Inventory Service event loop finished. Shutting down...")
+	app.logger.Info("Inventory Service event loop finished. Shutting down...")
+	return nil
+}
+
+// Shutdown gracefully shuts down all application components
+func (app *Application) Shutdown() {
+	app.logger.Info("Starting application shutdown...")
+
+	// Cancel context
+	if app.cancel != nil {
+		app.cancel()
+	}
+
+	// Close Kafka components
+	if app.reader != nil {
+		app.logger.Info("Closing Kafka reader...")
+		if err := app.reader.Close(); err != nil {
+			app.logger.Error("❌ Failed to close Kafka reader", zap.Error(err))
+		}
+	}
+
+	if app.writer != nil {
+		app.logger.Info("Closing Kafka writer...")
+		if err := app.writer.Close(); err != nil {
+			app.logger.Error("❌ Failed to close Kafka writer", zap.Error(err))
+		}
+	}
+
+	// Shutdown OpenTelemetry components
+	if app.otelTraceShutdown != nil {
+		app.logger.Info("Shutting down OpenTelemetry SDK for tracing...")
+		if err := app.otelTraceShutdown(context.Background()); err != nil {
+			app.logger.Error("❌ Error during OTel tracing SDK shutdown", zap.Error(err))
+		}
+		app.logger.Info("OTel tracing SDK shutdown complete.")
+	}
+
+	if app.otelLogShutdown != nil {
+		app.logger.Info("Shutting down OpenTelemetry SDK for logging...")
+		if err := app.otelLogShutdown(context.Background()); err != nil {
+			app.logger.Error("❌ Error during OTel logging SDK shutdown", zap.Error(err))
+		}
+		app.logger.Info("OTel logging SDK shutdown complete.")
+	}
+
+	// Sync logger
+	if app.logger != nil {
+		_ = app.logger.Sync()
+	}
+
+	app.logger.Info("Application shutdown complete.")
+}
+
+func main() {
+	app := NewApplication()
+	defer app.Shutdown()
+
+	if err := app.Initialize(); err != nil {
+		stdlog.Fatalf("❌ Failed to initialize application: %v", err)
+	}
+
+	if err := app.Run(); err != nil {
+		app.logger.Error("❌ Application error", zap.Error(err))
+	}
 }
