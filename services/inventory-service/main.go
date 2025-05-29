@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	stdlog "log"
 )
@@ -12,12 +13,13 @@ func main() {
 }
 
 func run() error {
-	app := NewApplication()
-	defer app.Shutdown()
+	ctx := context.Background()
 
-	if err := app.Initialize(); err != nil {
-		return fmt.Errorf("initialization failed: %w", err)
+	app, err := NewApplication(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create application: %w", err)
 	}
+	defer app.Shutdown()
 
 	if err := app.Run(); err != nil {
 		return fmt.Errorf("application runtime error: %w", err)

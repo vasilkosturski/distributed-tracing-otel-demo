@@ -18,21 +18,21 @@ type Application struct {
 	factory *ServiceFactory
 }
 
-// NewApplication creates a new Application instance
-func NewApplication() *Application {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	return &Application{
-		ctx:    ctx,
+// NewApplication creates and fully initializes a new Application instance
+func NewApplication(ctx context.Context) (*Application, error) {
+	// Set up signal handling
+	appCtx, cancel := signal.NotifyContext(ctx, os.Interrupt, os.Kill)
+
+	app := &Application{
+		ctx:    appCtx,
 		cancel: cancel,
 	}
-}
 
-// Initialize sets up all the application components
-func (app *Application) Initialize() error {
 	// Initialize infrastructure (expensive singletons)
 	infra, err := NewInfrastructure(app.ctx)
 	if err != nil {
-		return err
+		cancel() // Clean up context if initialization fails
+		return nil, err
 	}
 	app.infra = infra
 
@@ -40,7 +40,7 @@ func (app *Application) Initialize() error {
 	app.factory = NewServiceFactory(infra)
 
 	app.infra.Logger().Info("Application initialized successfully")
-	return nil
+	return app, nil
 }
 
 // Run starts the main event processing loop
