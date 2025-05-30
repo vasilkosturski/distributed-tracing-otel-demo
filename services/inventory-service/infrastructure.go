@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"inventoryservice/config"
 	"inventoryservice/observability"
 	"os"
-	"time"
 
 	otelkafka "github.com/Trendyol/otel-kafka-konsumer"
 	"github.com/segmentio/kafka-go"
@@ -22,6 +22,7 @@ import (
 
 // Infrastructure holds expensive-to-create singleton resources
 type Infrastructure struct {
+	config            *config.Config
 	logger            Logger
 	tracer            Tracer
 	messageConsumer   MessageConsumer
@@ -32,7 +33,15 @@ type Infrastructure struct {
 
 // NewInfrastructure creates and initializes all infrastructure components
 func NewInfrastructure(ctx context.Context) (*Infrastructure, error) {
-	infra := &Infrastructure{}
+	// Load configuration first
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	infra := &Infrastructure{
+		config: cfg,
+	}
 
 	// Initialize logger
 	if err := infra.setupLogger(ctx); err != nil {
@@ -62,14 +71,14 @@ func (infra *Infrastructure) setupLogger(ctx context.Context) error {
 // setupObservability configures OpenTelemetry logging and tracing
 func (infra *Infrastructure) setupObservability(ctx context.Context) error {
 	// Setup logging SDK
-	otelLogShutdown, err := observability.SetupLoggingSDK(ctx)
+	otelLogShutdown, err := observability.SetupLoggingSDK(ctx, infra.config)
 	if err != nil {
 		infra.logger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
 	}
 	infra.otelLogShutdown = otelLogShutdown
 
 	// Setup tracing SDK
-	tp, otelTraceShutdown, err := observability.SetupTracingSDK(ctx)
+	tp, otelTraceShutdown, err := observability.SetupTracingSDK(ctx, infra.config)
 	if err != nil {
 		infra.logger.Error("Failed to setup OpenTelemetry tracing", zap.Error(err))
 	}
@@ -116,12 +125,11 @@ func (infra *Infrastructure) reinitializeLoggerWithOTel() {
 	infra.logger.Info("Logger re-initialized with OpenTelemetry bridge")
 }
 
-
 // setupKafkaWithTracer initializes Kafka consumer and producer with OpenTelemetry
 func (infra *Infrastructure) setupKafkaWithTracer(tp trace.TracerProvider) error {
 	// Create Kafka reader
 	readerConfig := kafka.ReaderConfig{
-		Brokers: []string{config.KafkaBrokerAddress},
+		Brokers: []string{infra.config.KafkaBroker},
 		Topic:   config.OrderCreatedTopic,
 		GroupID: config.GroupID,
 	}
@@ -135,11 +143,11 @@ func (infra *Infrastructure) setupKafkaWithTracer(tp trace.TracerProvider) error
 
 	// Create Kafka writer
 	baseWriter := &kafka.Writer{
-		Addr:         kafka.TCP(config.KafkaBrokerAddress),
+		Addr:         kafka.TCP(infra.config.KafkaBroker),
 		Topic:        config.InventoryTopic,
 		Balancer:     &kafka.LeastBytes{},
-		BatchTimeout: 10 * time.Millisecond,
-		BatchSize:    100,
+		BatchTimeout: config.BatchTimeout,
+		BatchSize:    config.BatchSize,
 	}
 
 	writer, err := otelkafka.NewWriter(baseWriter,

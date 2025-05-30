@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
 	"inventoryservice/config"
 
 	"go.opentelemetry.io/otel"
@@ -19,34 +17,27 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-// SetupLoggingSDK configures OpenTelemetry SDK specifically for LOGS.
-func SetupLoggingSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
+// SetupLoggingSDK initializes OpenTelemetry logging with the provided configuration
+func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
 	var currentErr error // To accumulate errors from various setup steps
 
-	shutdown = func(ctx context.Context) error {
-		var errs error
-		// LIFO order for shutdown
-		for i := len(shutdownFuncs) - 1; i >= 0; i-- {
-			errs = errors.Join(errs, shutdownFuncs[i](ctx))
+	shutdown = func(context.Context) error {
+		var err error
+		for _, fn := range shutdownFuncs {
+			err = errors.Join(err, fn(ctx))
 		}
 		shutdownFuncs = nil
-		return errs
+		return err
 	}
 
-	addShutdown := func(name string, fn func(context.Context) error) {
-		if fn != nil {
-			shutdownFuncs = append(shutdownFuncs, fn)
-		}
-	}
-	// handleErr accumulates errors. It's called after each setup step that can fail.
-	handleErr := func(componentName string, inErr error) {
+	handleErr := func(name string, inErr error) {
 		if inErr != nil {
-			currentErr = errors.Join(currentErr, fmt.Errorf("failed to setup %s: %w", componentName, inErr))
+			currentErr = errors.Join(currentErr, fmt.Errorf("%s: %w", name, inErr))
 		}
 	}
 
-	// 1. Build Resource
+	// 1. Setup Resource (contains service metadata)
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
@@ -59,65 +50,59 @@ func SetupLoggingSDK(ctx context.Context) (shutdown func(context.Context) error,
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	// --- Common OTLP/HTTP Exporter Options ---
-	grafanaAuthHeader := map[string]string{"Authorization": config.GrafanaAuthHeader}
-	grafanaBaseEndpoint := config.GrafanaBaseEndpoint
-
-	// 2. Setup Logger Provider using OTLP/HTTP (for Zap bridge)
+	// 2. Setup Logger Provider using OTLP/HTTP
 	logExporter, errExporter := otlploghttp.New(ctx,
-		otlploghttp.WithEndpoint(grafanaBaseEndpoint),
+		otlploghttp.WithEndpoint(cfg.OtelEndpoint),
 		otlploghttp.WithURLPath(config.LogsPath),
-		otlploghttp.WithHeaders(grafanaAuthHeader),
+		otlploghttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
 	)
 	handleErr("OTLP Log Exporter", errExporter)
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
-		// Configure BatchProcessor with specific options
+		// Configure BatchProcessor with configurable options
 		logProcessor := sdklog.NewBatchProcessor(logExporter,
-			sdklog.WithExportTimeout(30*time.Second), // SDK default is 30s
-			sdklog.WithMaxQueueSize(2048),            // SDK default
+			sdklog.WithExportTimeout(config.ExportTimeout),
+			sdklog.WithMaxQueueSize(config.MaxQueueSize),
 		)
 
-		lp := sdklog.NewLoggerProvider(
-			sdklog.WithResource(res),
+		// Create the LoggerProvider
+		loggerProvider := sdklog.NewLoggerProvider(
 			sdklog.WithProcessor(logProcessor),
+			sdklog.WithResource(res),
 		)
-		global.SetLoggerProvider(lp) // Set for otelzap bridge
-		addShutdown("LoggerProvider", lp.Shutdown)
+
+		// Set the global logger provider
+		global.SetLoggerProvider(loggerProvider)
+
+		// Add shutdown function
+		shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
 	}
 
-	return shutdown, currentErr // Return accumulated errors
+	return shutdown, currentErr
 }
 
-// SetupTracingSDK configures OpenTelemetry SDK specifically for TRACES.
-func SetupTracingSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shutdown func(context.Context) error, err error) {
+// SetupTracingSDK initializes OpenTelemetry tracing with the provided configuration
+func SetupTracingSDK(ctx context.Context, cfg *config.Config) (tp *sdktrace.TracerProvider, shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
-	var currentErr error // To accumulate errors from various setup steps
+	var currentErr error
 
-	shutdown = func(ctx context.Context) error {
-		var errs error
-		// LIFO order for shutdown
-		for i := len(shutdownFuncs) - 1; i >= 0; i-- {
-			errs = errors.Join(errs, shutdownFuncs[i](ctx))
+	shutdown = func(context.Context) error {
+		var err error
+		for _, fn := range shutdownFuncs {
+			err = errors.Join(err, fn(ctx))
 		}
 		shutdownFuncs = nil
-		return errs
+		return err
 	}
 
-	addShutdown := func(name string, fn func(context.Context) error) {
-		if fn != nil {
-			shutdownFuncs = append(shutdownFuncs, fn)
-		}
-	}
-	// handleErr accumulates errors. It's called after each setup step that can fail.
-	handleErr := func(componentName string, inErr error) {
+	handleErr := func(name string, inErr error) {
 		if inErr != nil {
-			currentErr = errors.Join(currentErr, fmt.Errorf("failed to setup %s: %w", componentName, inErr))
+			currentErr = errors.Join(currentErr, fmt.Errorf("%s: %w", name, inErr))
 		}
 	}
 
-	// 1. Build Resource
+	// 1. Setup Resource (contains service metadata)
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
@@ -126,7 +111,7 @@ func SetupTracingSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shutdown
 			semconv.ServiceVersion(config.ServiceVersion),
 		),
 	)
-	if err != nil { // If resource creation fails, we can't proceed
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
@@ -137,34 +122,36 @@ func SetupTracingSDK(ctx context.Context) (tp *sdktrace.TracerProvider, shutdown
 		propagation.Baggage{},
 	))
 
-	// --- Common OTLP/HTTP Exporter Options ---
-	grafanaAuthHeader := map[string]string{"Authorization": config.GrafanaAuthHeader}
-	grafanaBaseEndpoint := config.GrafanaBaseEndpoint
-
-	// 2. Setup Trace Exporter using OTLP/HTTP
+	// 2. Setup Trace Provider using OTLP/HTTP
 	traceExporter, errExporter := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(grafanaBaseEndpoint),
+		otlptracehttp.WithEndpoint(cfg.OtelEndpoint),
 		otlptracehttp.WithURLPath(config.TracesPath),
-		otlptracehttp.WithHeaders(grafanaAuthHeader),
+		otlptracehttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
 	)
 	handleErr("OTLP Trace Exporter", errExporter)
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
-		// Configure TracerProvider with batch span processor
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(traceExporter,
-				sdktrace.WithMaxQueueSize(2048),
-				sdktrace.WithBatchTimeout(5*time.Second),
-			),
+		// Configure BatchProcessor
+		traceProcessor := sdktrace.NewBatchSpanProcessor(traceExporter,
+			sdktrace.WithExportTimeout(config.ExportTimeout),
+			sdktrace.WithMaxQueueSize(config.MaxQueueSize),
+		)
+
+		// Create the TracerProvider
+		tracerProvider := sdktrace.NewTracerProvider(
+			sdktrace.WithSampler(sdktrace.AlwaysSample()),
 			sdktrace.WithResource(res),
+			sdktrace.WithSpanProcessor(traceProcessor),
 		)
 
 		// Set the global tracer provider
-		otel.SetTracerProvider(tp)
+		otel.SetTracerProvider(tracerProvider)
 
-		addShutdown("TracerProvider", tp.Shutdown)
+		// Add shutdown function
+		shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
+		tp = tracerProvider
 	}
 
-	return tp, shutdown, currentErr // Return accumulated errors
+	return tp, shutdown, currentErr
 }
