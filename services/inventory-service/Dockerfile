@@ -1,36 +1,29 @@
-# Stage 1: Build the Go binary (with Delve, ARM64-compatible)
-FROM golang:1.24 as builder
-
+# Build stage
+FROM golang:1.24-alpine AS build
 WORKDIR /app
 
+# Install git for Go modules
+RUN apk add --no-cache git
+
+# Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
 
-# Install Delve
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o inventory-service .
 
-# Build binary with debug info (no static build!)
-# Avoid CGO_ENABLED=0 so Delve can use libc from Go image
-RUN GOOS=linux GOARCH=arm64 go build -gcflags="all=-N -l" -o inventoryservice main.go
-
-# Stage 2: Use full Go base image for matching GLIBC (no slim Debian)
-FROM golang:1.24
-
+# Runtime stage
+FROM alpine:latest
 WORKDIR /app
 
-# Install debugging tools (optional)
-RUN apt-get update && apt-get install -y \
-    gdb \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install ca-certificates for HTTPS calls to Grafana Cloud
+RUN apk --no-cache add ca-certificates
 
-# Copy binary and delve
-COPY --from=builder /app/inventoryservice .
-COPY --from=builder /go/bin/dlv /usr/local/bin/dlv
+# Copy the binary
+COPY --from=build /app/inventory-service .
 
-EXPOSE 40000
-
-#ENTRYPOINT ["dlv", "exec", "./inventoryservice", "--headless", "--listen=:40000", "--api-version=2", "--accept-multiclient"]
-ENTRYPOINT ["./inventoryservice"]
+# Run the service
+ENTRYPOINT ["./inventory-service"]

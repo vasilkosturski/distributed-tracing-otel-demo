@@ -11,6 +11,17 @@
             "envFile": "${workspaceFolder}/services/inventory-service/.env",
             "env": {},
             "args": []
+        },
+        {
+            "name": "Launch Order Service (Java)",
+            "type": "java",
+            "request": "launch",
+            "mainClass": "com.vkontech.orderservice.OrderServiceApplication",
+            "projectName": "order-service",
+            "cwd": "${workspaceFolder}/services/order-service",
+            "envFile": "${workspaceFolder}/services/order-service/.env",
+            "vmArgs": "-javaagent:${workspaceFolder}/services/order-service/opentelemetry-javaagent.jar",
+            "args": []
         }
     ]
 } 
