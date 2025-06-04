@@ -3,3 +3,5 @@
 __debug_bin*
 inventoryservice
 services/inventory-service/inventory-service
+.cursor/
+services/order-service/app.log
