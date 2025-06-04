@@ -1,0 +1,58 @@
+version: '3.8'
+
+# Default compose file - Infrastructure only (for local development)
+# Services run locally, infrastructure runs in Docker
+# 
+# Usage:
+#   docker compose up           - Start infrastructure only
+#   docker compose up -d        - Start infrastructure in background
+#   docker compose down         - Stop infrastructure
+#
+# For full stack: docker compose -f docker-compose.full.yml up --build
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orders_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  postgres-mcp:
+    image: crystaldba/postgres-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URI=postgresql://postgres:password@postgres:5432/orders_db
+    command: ["--access-mode=unrestricted", "--transport=sse"]
+    depends_on:
+      - postgres
+
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: bitnami/kafka:3.9.0
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_ENABLE_KRAFT=false
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+
+volumes:
+  postgres_data: 

@@ -3,5 +3,10 @@
 __debug_bin*
 inventoryservice
 services/inventory-service/inventory-service
+
+# IDE and editor directories
 .cursor/
-services/order-service/app.log
+
+# Application logs
+app.log
+*.log
