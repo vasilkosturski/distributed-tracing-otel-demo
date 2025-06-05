@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/orders_db}
+    username: ${DATABASE_USER:postgres}
+    password: ${DATABASE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+  
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKER:kafka:9093}
+    producer:
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# Logging configuration
+logging:
+  level:
+    com.vkontech.orderservice: INFO
+    org.apache.kafka: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: app.log 
