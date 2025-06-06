@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -17,20 +15,14 @@ import (
 )
 
 func main() {
-	fmt.Println("🔍 Testing OpenTelemetry Authentication with Grafana Cloud...")
+	fmt.Println("🔍 Testing OpenTelemetry with HARDCODED credentials...")
 
-	// Read environment variables (using the exact format from Grafana dashboard)
-	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	headers := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")
-	protocol := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL")
+	// HARDCODED values from the working .env files - matching inventory service exactly
+	endpoint := "otlp-gateway-prod-eu-west-2.grafana.net"
+	authHeader := "Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YjNSc2NDMTBiMnRsYmkweUlpd2lheUk2SW1ad2FXMWplRUV3Tnpnek9URXplRFZ5YWpoMlpWa3lkeUlzSW0waU9uc2ljaUk2SW5CeWIyUXRaWFV0ZDJWemRDMHlJbjE5" // Full header with "Basic " prefix
 
-	fmt.Printf("📡 Endpoint: %s\n", endpoint)
-	fmt.Printf("🔐 Headers: %s\n", headers)
-	fmt.Printf("📋 Protocol: %s\n", protocol)
-
-	if endpoint == "" || headers == "" {
-		log.Fatal("❌ Missing required environment variables. Please set OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS")
-	}
+	fmt.Printf("📡 Endpoint: https://%s\n", endpoint)
+	fmt.Printf("🔐 Auth Header: %s...\n", authHeader[:30])
 
 	// Set up OpenTelemetry
 	ctx := context.Background()
@@ -46,31 +38,16 @@ func main() {
 		log.Fatalf("❌ Failed to create resource: %v", err)
 	}
 
-	// Parse headers from environment variable
-	headersMap := make(map[string]string)
-	if headers != "" {
-		// Headers format: "Authorization=Basic TOKEN"
-		// Simple parsing for this test
-		if len(headers) > 13 && headers[:13] == "Authorization" {
-			headersMap["Authorization"] = headers[14:] // Skip "Authorization="
-		}
+	// Create headers map - EXACTLY like inventory service
+	headersMap := map[string]string{
+		"Authorization": authHeader, // Already includes "Basic " prefix
 	}
 
-	fmt.Printf("🔑 Parsed Authorization: %s...\n", headersMap["Authorization"][:20])
+	fmt.Printf("🔑 Authorization header: %s...\n", authHeader[:30])
 
-	// Clean endpoint - remove https:// if present since WithEndpoint doesn't expect it
-	cleanEndpoint := endpoint
-	if strings.HasPrefix(endpoint, "https://") {
-		cleanEndpoint = strings.TrimPrefix(endpoint, "https://")
-	} else if strings.HasPrefix(endpoint, "http://") {
-		cleanEndpoint = strings.TrimPrefix(endpoint, "http://")
-	}
-
-	fmt.Printf("🌐 Clean Endpoint: %s\n", cleanEndpoint)
-
-	// Create trace exporter with proper configuration
+	// Create trace exporter - EXACTLY like inventory service (just hostname)
 	traceExporter, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpoint(cleanEndpoint),
+		otlptracehttp.WithEndpoint(endpoint), // Just hostname, no https://
 		otlptracehttp.WithURLPath("/otlp/v1/traces"),
 		otlptracehttp.WithHeaders(headersMap),
 	)
@@ -84,6 +61,7 @@ func main() {
 		trace.WithResource(res),
 	)
 	defer func() {
+		fmt.Println("🔄 Shutting down tracer provider...")
 		if err := tp.Shutdown(ctx); err != nil {
 			log.Printf("⚠️  Error shutting down tracer provider: %v", err)
 		}
@@ -98,22 +76,23 @@ func main() {
 	fmt.Println("✅ OpenTelemetry setup complete, creating test span...")
 
 	// Create a test span
-	_, span := tracer.Start(ctx, "test-authentication")
+	_, span := tracer.Start(ctx, "test-hardcoded-auth")
 	span.SetAttributes(
-		attribute.String("http.method", "GET"),
-		attribute.String("http.url", "https://example.com/test"),
-		attribute.String("test.type", "authentication"),
+		attribute.String("test.type", "hardcoded-credentials"),
+		attribute.String("test.endpoint", endpoint),
+		attribute.String("test.environment", "local"),
+		attribute.Bool("test.success", true),
 	)
 
 	// Simulate some work
+	fmt.Println("⏳ Simulating some work...")
 	time.Sleep(100 * time.Millisecond)
 
 	span.End()
-
 	fmt.Println("📤 Test span created and ended, waiting for export...")
 
 	// Give time for the span to be exported
-	time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Second)
 
-	fmt.Println("✅ Test completed! Check your Grafana dashboard for the trace.")
+	fmt.Println("✅ Test completed! If successful, check your Grafana dashboard for the trace 'test-hardcoded-auth'")
 }
