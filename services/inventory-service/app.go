@@ -5,10 +5,8 @@ import (
 	"errors"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/segmentio/kafka-go"
-	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
@@ -40,9 +38,6 @@ func NewApplication(ctx context.Context) (*Application, error) {
 
 	// Create service factory
 	app.factory = NewServiceFactory(infra)
-
-	// Create a startup test span to verify OTEL configuration
-	app.createStartupTestSpan(app.ctx)
 
 	app.infra.Logger().Info("Application initialized successfully")
 	return app, nil
@@ -99,30 +94,4 @@ func (app *Application) Shutdown() {
 	if app.infra != nil {
 		app.infra.Shutdown(context.Background())
 	}
-}
-
-// createStartupTestSpan creates a test span to verify OTEL configuration works
-func (app *Application) createStartupTestSpan(ctx context.Context) {
-	tracer := app.infra.Tracer()
-	logger := app.infra.Logger()
-
-	logger.Info("🔍 Creating startup test span to verify OTEL configuration...")
-
-	// Create a test span
-	_, span := tracer.Start(ctx, "inventory-service-startup-test")
-	defer span.End()
-
-	// Add some attributes to make it identifiable
-	span.SetAttributes(
-		attribute.String("test.type", "startup-verification"),
-		attribute.String("service.name", "inventory-service"),
-		attribute.String("test.purpose", "verify-otel-env-vars"),
-		attribute.Bool("startup.success", true),
-	)
-
-	// Simulate some work
-	logger.Info("⏳ Startup test span created, simulating brief work...")
-	time.Sleep(100 * time.Millisecond)
-
-	logger.Info("✅ Startup test span completed - OTEL configuration verified!")
 }
