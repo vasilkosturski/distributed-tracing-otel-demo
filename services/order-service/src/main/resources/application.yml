@@ -9,6 +9,10 @@ spring:
     username: ${DATABASE_USER:postgres}
     password: ${DATABASE_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
   kafka:
     bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
     producer:

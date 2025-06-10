@@ -1,0 +1,11 @@
+-- Create Orders table
+-- This script runs automatically on Spring Boot startup
+
+CREATE TABLE IF NOT EXISTS orders (
+    id UUID PRIMARY KEY,
+    customer_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    quantity INTEGER NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

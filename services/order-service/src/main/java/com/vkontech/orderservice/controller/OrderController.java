@@ -2,10 +2,12 @@ package com.vkontech.orderservice.controller;
 
 import com.vkontech.orderservice.model.CreateOrderRequest;
 import com.vkontech.orderservice.model.CreateOrderResponse;
+import com.vkontech.orderservice.model.Order;
 import com.vkontech.orderservice.service.OrderService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -16,6 +18,16 @@ public class OrderController {
 
     public OrderController(OrderService orderService) {
         this.orderService = orderService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Order>> getAllOrders() {
+        try {
+            List<Order> orders = orderService.getAllOrders();
+            return ResponseEntity.ok(orders);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping

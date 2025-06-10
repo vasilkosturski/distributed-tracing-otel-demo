@@ -3,6 +3,7 @@ package com.vkontech.orderservice.service;
 import com.vkontech.orderservice.kafka.OrderCreatedEvent;
 import com.vkontech.orderservice.model.CreateOrderRequest;
 import com.vkontech.orderservice.model.CreateOrderResponse;
+import com.vkontech.orderservice.model.Order;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
@@ -13,6 +14,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -78,6 +80,20 @@ public class OrderService {
         jdbcTemplate.update(
                 "UPDATE orders SET status = ? WHERE id = ?",
                 "INVENTORY_RESERVED", orderId
+        );
+    }
+
+    public List<Order> getAllOrders() {
+        logger.info("Fetching all orders");
+        return jdbcTemplate.query(
+                "SELECT id, customer_id, product_id, quantity, status FROM orders ORDER BY id",
+                (rs, rowNum) -> new Order(
+                        UUID.fromString(rs.getString("id")),
+                        UUID.fromString(rs.getString("customer_id")),
+                        UUID.fromString(rs.getString("product_id")),
+                        rs.getInt("quantity"),
+                        rs.getString("status")
+                )
         );
     }
 }
