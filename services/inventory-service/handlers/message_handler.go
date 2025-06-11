@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 
 	"inventoryservice/events"
+	"inventoryservice/internal/domain"
+	"inventoryservice/internal/infrastructure/messaging"
+	"inventoryservice/internal/infrastructure/observability"
 
 	"github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
@@ -30,13 +33,13 @@ type MessageProducer interface {
 
 // MessageHandler handles Kafka message processing
 type MessageHandler struct {
-	inventoryService InventoryService
-	producer         MessageProducer
-	logger           Logger
+	inventoryService domain.InventoryService
+	producer         messaging.MessageProducer
+	logger           observability.Logger
 }
 
 // NewMessageHandler creates a new MessageHandler instance with explicit dependencies
-func NewMessageHandler(inventoryService InventoryService, producer MessageProducer, logger Logger) *MessageHandler {
+func NewMessageHandler(inventoryService domain.InventoryService, producer messaging.MessageProducer, logger observability.Logger) *MessageHandler {
 	return &MessageHandler{
 		inventoryService: inventoryService,
 		producer:         producer,

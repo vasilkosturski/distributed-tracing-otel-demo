@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"inventoryservice/config"
+	"inventoryservice/internal/infrastructure/messaging"
+	infra_obs "inventoryservice/internal/infrastructure/observability"
 	"inventoryservice/observability"
 	"os"
 
@@ -23,10 +25,10 @@ import (
 // Infrastructure holds expensive-to-create singleton resources
 type Infrastructure struct {
 	config            *config.Config
-	logger            Logger
-	tracer            Tracer
-	messageConsumer   MessageConsumer
-	messageProducer   MessageProducer
+	logger            infra_obs.Logger
+	tracer            infra_obs.Tracer
+	messageConsumer   messaging.MessageConsumer
+	messageProducer   messaging.MessageProducer
 	otelLogShutdown   func(context.Context) error
 	otelTraceShutdown func(context.Context) error
 }
@@ -207,7 +209,11 @@ func (infra *Infrastructure) Shutdown(ctx context.Context) {
 }
 
 // Getters for accessing infrastructure components
-func (infra *Infrastructure) Logger() Logger                   { return infra.logger }
-func (infra *Infrastructure) Tracer() Tracer                   { return infra.tracer }
-func (infra *Infrastructure) MessageConsumer() MessageConsumer { return infra.messageConsumer }
-func (infra *Infrastructure) MessageProducer() MessageProducer { return infra.messageProducer }
+func (infra *Infrastructure) Logger() infra_obs.Logger { return infra.logger }
+func (infra *Infrastructure) Tracer() infra_obs.Tracer { return infra.tracer }
+func (infra *Infrastructure) MessageConsumer() messaging.MessageConsumer {
+	return infra.messageConsumer
+}
+func (infra *Infrastructure) MessageProducer() messaging.MessageProducer {
+	return infra.messageProducer
+}

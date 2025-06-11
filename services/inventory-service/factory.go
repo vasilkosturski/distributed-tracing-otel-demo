@@ -2,6 +2,8 @@ package main
 
 import (
 	"inventoryservice/handlers"
+	app_handlers "inventoryservice/internal/application/handlers"
+	"inventoryservice/internal/domain"
 	"inventoryservice/services"
 )
 
@@ -18,11 +20,11 @@ func NewServiceFactory(infra *Infrastructure) *ServiceFactory {
 }
 
 // CreateInventoryService creates a new inventory service instance
-func (f *ServiceFactory) CreateInventoryService() InventoryService {
+func (f *ServiceFactory) CreateInventoryService() domain.InventoryService {
 	return services.NewInventoryService(f.infra.Logger(), f.infra.Tracer())
 }
 
 // CreateMessageHandler creates a new message handler instance
-func (f *ServiceFactory) CreateMessageHandler(inventoryService InventoryService) MessageHandler {
+func (f *ServiceFactory) CreateMessageHandler(inventoryService domain.InventoryService) app_handlers.MessageHandler {
 	return handlers.NewMessageHandler(inventoryService, f.infra.MessageProducer(), f.infra.Logger())
 }

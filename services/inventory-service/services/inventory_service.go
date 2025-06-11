@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"inventoryservice/events"
+	"inventoryservice/internal/infrastructure/observability"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -25,12 +26,12 @@ type Tracer interface {
 
 // InventoryService handles inventory-related business logic
 type InventoryService struct {
-	logger Logger
-	tracer Tracer
+	logger observability.Logger
+	tracer observability.Tracer
 }
 
 // NewInventoryService creates a new InventoryService instance with explicit dependencies
-func NewInventoryService(logger Logger, tracer Tracer) *InventoryService {
+func NewInventoryService(logger observability.Logger, tracer observability.Tracer) *InventoryService {
 	return &InventoryService{
 		logger: logger,
 		tracer: tracer,
