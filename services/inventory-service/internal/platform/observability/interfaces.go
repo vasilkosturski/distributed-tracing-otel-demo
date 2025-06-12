@@ -8,7 +8,7 @@ import (
 )
 
 // Logger defines the interface for application logging.
-// This is an infrastructure concern that deals with external logging systems.
+// This is a platform concern that deals with external logging systems.
 type Logger interface {
 	Info(msg string, fields ...zap.Field)
 	Error(msg string, fields ...zap.Field)
@@ -17,7 +17,7 @@ type Logger interface {
 }
 
 // Tracer defines the interface for distributed tracing.
-// This is an infrastructure concern that deals with external tracing systems.
+// This is a platform concern that deals with external tracing systems.
 type Tracer interface {
 	Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span)
 }

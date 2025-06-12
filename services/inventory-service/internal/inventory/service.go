@@ -1,33 +1,38 @@
-package services
+package inventory
 
 import (
 	"context"
 	"time"
 
-	"inventoryservice/internal/domain"
-	"inventoryservice/internal/infrastructure/observability"
+	"inventoryservice/internal/platform/observability"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 )
 
-// InventoryService handles inventory-related business logic
-type InventoryService struct {
+// Service defines the core business operations for inventory management.
+// This interface represents pure business logic without infrastructure concerns.
+type Service interface {
+	ProcessOrderCreated(ctx context.Context, order OrderCreatedEvent) (*InventoryReservedEvent, error)
+}
+
+// DefaultService handles inventory-related business logic
+type DefaultService struct {
 	logger observability.Logger
 	tracer observability.Tracer
 }
 
-// NewInventoryService creates a new InventoryService instance with explicit dependencies
-func NewInventoryService(logger observability.Logger, tracer observability.Tracer) *InventoryService {
-	return &InventoryService{
+// NewService creates a new inventory service instance with explicit dependencies
+func NewService(logger observability.Logger, tracer observability.Tracer) Service {
+	return &DefaultService{
 		logger: logger,
 		tracer: tracer,
 	}
 }
 
 // ProcessOrderCreated processes an OrderCreated event and returns an InventoryReserved event
-func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order domain.OrderCreatedEvent) (*domain.InventoryReservedEvent, error) {
+func (s *DefaultService) ProcessOrderCreated(ctx context.Context, order OrderCreatedEvent) (*InventoryReservedEvent, error) {
 	// Create span for inventory checking
 	_, span := s.tracer.Start(ctx, "inventory_check")
 	defer span.End()
@@ -44,8 +49,7 @@ func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order domain
 	// Simulate inventory lookup time
 	time.Sleep(50 * time.Millisecond)
 
-	// In a real system, you'd query a database or external service here
-	// For demo purposes, we'll simulate successful inventory check
+	// In a real system, this would query inventory database
 	stockAvailable := true
 	reservedQuantity := 1
 
@@ -60,7 +64,7 @@ func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order domain
 	span.SetStatus(codes.Ok, "Inventory successfully reserved")
 
 	// Create the result event
-	result := &domain.InventoryReservedEvent{
+	result := &InventoryReservedEvent{
 		OrderID: order.OrderID,
 	}
 

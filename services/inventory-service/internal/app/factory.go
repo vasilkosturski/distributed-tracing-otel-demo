@@ -1,29 +1,27 @@
 package app
 
 import (
-	"inventoryservice/internal/application/handlers"
-	"inventoryservice/internal/application/services"
-	"inventoryservice/internal/domain"
+	"inventoryservice/internal/inventory"
 )
 
 // ServiceFactory creates business logic services with their dependencies
 type ServiceFactory struct {
-	infra *Infrastructure
+	container *Container
 }
 
 // NewServiceFactory creates a new service factory
-func NewServiceFactory(infra *Infrastructure) *ServiceFactory {
+func NewServiceFactory(container *Container) *ServiceFactory {
 	return &ServiceFactory{
-		infra: infra,
+		container: container,
 	}
 }
 
 // CreateInventoryService creates a new inventory service instance
-func (f *ServiceFactory) CreateInventoryService() domain.InventoryService {
-	return services.NewInventoryService(f.infra.Logger(), f.infra.Tracer())
+func (f *ServiceFactory) CreateInventoryService() inventory.Service {
+	return inventory.NewService(f.container.Logger(), f.container.Tracer())
 }
 
 // CreateMessageHandler creates a new message handler instance
-func (f *ServiceFactory) CreateMessageHandler(inventoryService domain.InventoryService) handlers.MessageHandler {
-	return handlers.NewMessageHandler(inventoryService, f.infra.MessageProducer(), f.infra.Logger())
+func (f *ServiceFactory) CreateMessageHandler(inventoryService inventory.Service) inventory.MessageHandler {
+	return inventory.NewMessageHandler(inventoryService, f.container.MessageProducer(), f.container.Logger())
 }

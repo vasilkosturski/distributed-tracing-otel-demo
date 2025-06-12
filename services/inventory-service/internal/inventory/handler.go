@@ -1,28 +1,32 @@
-package handlers
+package inventory
 
 import (
 	"context"
 	"encoding/json"
 
-	"inventoryservice/internal/domain"
-	"inventoryservice/internal/infrastructure/messaging"
-	"inventoryservice/internal/infrastructure/observability"
+	"inventoryservice/internal/platform/kafka"
+	"inventoryservice/internal/platform/observability"
 
-	"github.com/segmentio/kafka-go"
+	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
-// KafkaMessageHandler handles Kafka message processing
+// MessageHandler defines the interface for processing incoming messages.
+type MessageHandler interface {
+	HandleOrderCreated(ctx context.Context, msg kafkago.Message) error
+}
+
+// KafkaMessageHandler handles Kafka message processing for inventory events
 type KafkaMessageHandler struct {
-	inventoryService domain.InventoryService
-	producer         messaging.MessageProducer
+	inventoryService Service
+	producer         kafka.Producer
 	logger           observability.Logger
 }
 
 // NewMessageHandler creates a new MessageHandler instance with explicit dependencies
-func NewMessageHandler(inventoryService domain.InventoryService, producer messaging.MessageProducer, logger observability.Logger) MessageHandler {
+func NewMessageHandler(inventoryService Service, producer kafka.Producer, logger observability.Logger) MessageHandler {
 	return &KafkaMessageHandler{
 		inventoryService: inventoryService,
 		producer:         producer,
@@ -31,9 +35,8 @@ func NewMessageHandler(inventoryService domain.InventoryService, producer messag
 }
 
 // HandleOrderCreated processes an OrderCreated message from Kafka
-func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.Message) error {
-	// Extract trace context from the incoming Kafka message headers
-	// This is important for connecting the trace from the producer
+func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkago.Message) error {
+	// Extract trace context to connect spans across services
 	propagator := otel.GetTextMapPropagator()
 	carrier := propagation.MapCarrier{}
 
@@ -52,7 +55,7 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.
 	)
 
 	// Deserialize the order event
-	var order domain.OrderCreatedEvent
+	var order OrderCreatedEvent
 	if err := json.Unmarshal(msg.Value, &order); err != nil {
 		h.logger.Error("❌ Invalid JSON in OrderCreated event",
 			zap.Error(err),
@@ -83,7 +86,7 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.
 	}
 
 	// Create a message with context that will propagate the trace
-	kafkaMsg := kafka.Message{
+	kafkaMsg := kafkago.Message{
 		Value: payload,
 		Key:   []byte(order.OrderID),
 	}

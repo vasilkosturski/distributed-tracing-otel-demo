@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"inventoryservice/internal/infrastructure/config"
+	"inventoryservice/internal/config"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"

@@ -12,10 +12,10 @@ import (
 
 // Application holds all the components and manages the application lifecycle
 type Application struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	infra   *Infrastructure
-	factory *ServiceFactory
+	ctx       context.Context
+	cancel    context.CancelFunc
+	container *Container
+	factory   *ServiceFactory
 }
 
 // NewApplication creates and fully initializes a new Application instance
@@ -28,33 +28,33 @@ func NewApplication(ctx context.Context) (*Application, error) {
 		cancel: cancel,
 	}
 
-	// Initialize infrastructure (expensive singletons)
-	infra, err := NewInfrastructure(app.ctx)
+	// Initialize container (expensive singletons)
+	container, err := NewContainer(app.ctx)
 	if err != nil {
 		cancel() // Clean up context if initialization fails
 		return nil, err
 	}
-	app.infra = infra
+	app.container = container
 
 	// Create service factory
-	app.factory = NewServiceFactory(infra)
+	app.factory = NewServiceFactory(container)
 
-	app.infra.Logger().Info("Application initialized successfully")
+	app.container.Logger().Info("Application initialized successfully")
 	return app, nil
 }
 
 // Run starts the main event processing loop
 func (app *Application) Run() error {
-	app.infra.Logger().Info("Kafka consumer started. Waiting for messages...")
+	app.container.Logger().Info("Kafka consumer started. Waiting for messages...")
 
 	for {
-		msg, err := app.infra.MessageConsumer().ReadMessage(app.ctx)
+		msg, err := app.container.MessageConsumer().ReadMessage(app.ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				app.infra.Logger().Info("Context done, exiting Kafka read loop.", zap.Error(err))
+				app.container.Logger().Info("Context done, exiting Kafka read loop.", zap.Error(err))
 				break
 			}
-			app.infra.Logger().Error("❌ Error reading from Kafka", zap.Error(err))
+			app.container.Logger().Error("❌ Error reading from Kafka", zap.Error(err))
 			continue
 		}
 
@@ -65,7 +65,7 @@ func (app *Application) Run() error {
 		}
 	}
 
-	app.infra.Logger().Info("Inventory Service event loop finished. Shutting down...")
+	app.container.Logger().Info("Inventory Service event loop finished. Shutting down...")
 	return nil
 }
 
@@ -81,8 +81,8 @@ func (app *Application) handleMessage(ctx context.Context, msg kafka.Message) er
 
 // Shutdown gracefully shuts down all application components
 func (app *Application) Shutdown() {
-	if app.infra != nil {
-		app.infra.Logger().Info("Starting application shutdown...")
+	if app.container != nil {
+		app.container.Logger().Info("Starting application shutdown...")
 	}
 
 	// Cancel context
@@ -90,8 +90,8 @@ func (app *Application) Shutdown() {
 		app.cancel()
 	}
 
-	// Shutdown infrastructure
-	if app.infra != nil {
-		app.infra.Shutdown(context.Background())
+	// Shutdown container
+	if app.container != nil {
+		app.container.Shutdown(context.Background())
 	}
 }

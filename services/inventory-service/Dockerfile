@@ -12,8 +12,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary from the simplified entry point
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o inventory-service ./cmd
+# Build the binary from the root main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o inventory-service .
 
 # Runtime stage
 FROM alpine:latest

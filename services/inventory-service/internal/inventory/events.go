@@ -1,4 +1,4 @@
-package domain
+package inventory
 
 // OrderCreatedEvent represents an order creation event from the order service
 type OrderCreatedEvent struct {
