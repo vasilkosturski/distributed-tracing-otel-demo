@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"inventoryservice/events"
 	"inventoryservice/internal/domain"
 	"inventoryservice/internal/infrastructure/messaging"
 	"inventoryservice/internal/infrastructure/observability"
@@ -15,32 +14,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// Logger interface defines what the handler needs for logging
-type Logger interface {
-	Info(msg string, fields ...zap.Field)
-	Error(msg string, fields ...zap.Field)
-}
-
-// InventoryService interface defines the business logic the handler depends on
-type InventoryService interface {
-	ProcessOrderCreated(ctx context.Context, order events.OrderCreatedEvent) (*events.InventoryReservedEvent, error)
-}
-
-// MessageProducer interface defines message publishing capabilities
-type MessageProducer interface {
-	WriteMessage(ctx context.Context, msg kafka.Message) error
-}
-
-// MessageHandler handles Kafka message processing
-type MessageHandler struct {
+// KafkaMessageHandler handles Kafka message processing
+type KafkaMessageHandler struct {
 	inventoryService domain.InventoryService
 	producer         messaging.MessageProducer
 	logger           observability.Logger
 }
 
 // NewMessageHandler creates a new MessageHandler instance with explicit dependencies
-func NewMessageHandler(inventoryService domain.InventoryService, producer messaging.MessageProducer, logger observability.Logger) *MessageHandler {
-	return &MessageHandler{
+func NewMessageHandler(inventoryService domain.InventoryService, producer messaging.MessageProducer, logger observability.Logger) MessageHandler {
+	return &KafkaMessageHandler{
 		inventoryService: inventoryService,
 		producer:         producer,
 		logger:           logger,
@@ -48,7 +31,7 @@ func NewMessageHandler(inventoryService domain.InventoryService, producer messag
 }
 
 // HandleOrderCreated processes an OrderCreated message from Kafka
-func (h *MessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.Message) error {
+func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.Message) error {
 	// Extract trace context from the incoming Kafka message headers
 	// This is important for connecting the trace from the producer
 	propagator := otel.GetTextMapPropagator()
@@ -69,7 +52,7 @@ func (h *MessageHandler) HandleOrderCreated(ctx context.Context, msg kafka.Messa
 	)
 
 	// Deserialize the order event
-	var order events.OrderCreatedEvent
+	var order domain.OrderCreatedEvent
 	if err := json.Unmarshal(msg.Value, &order); err != nil {
 		h.logger.Error("❌ Invalid JSON in OrderCreated event",
 			zap.Error(err),

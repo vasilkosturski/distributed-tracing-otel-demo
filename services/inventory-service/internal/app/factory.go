@@ -1,10 +1,9 @@
-package main
+package app
 
 import (
-	"inventoryservice/handlers"
-	app_handlers "inventoryservice/internal/application/handlers"
+	"inventoryservice/internal/application/handlers"
+	"inventoryservice/internal/application/services"
 	"inventoryservice/internal/domain"
-	"inventoryservice/services"
 )
 
 // ServiceFactory creates business logic services with their dependencies
@@ -25,6 +24,6 @@ func (f *ServiceFactory) CreateInventoryService() domain.InventoryService {
 }
 
 // CreateMessageHandler creates a new message handler instance
-func (f *ServiceFactory) CreateMessageHandler(inventoryService domain.InventoryService) app_handlers.MessageHandler {
+func (f *ServiceFactory) CreateMessageHandler(inventoryService domain.InventoryService) handlers.MessageHandler {
 	return handlers.NewMessageHandler(inventoryService, f.infra.MessageProducer(), f.infra.Logger())
 }

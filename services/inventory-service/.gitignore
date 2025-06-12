@@ -1,0 +1,24 @@
+# Compiled binaries
+inventoryservice
+server
+inventory-service
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment files
+.env.local 

@@ -1,12 +1,11 @@
-package main
+package app
 
 import (
 	"context"
 	"fmt"
-	"inventoryservice/config"
+	"inventoryservice/internal/infrastructure/config"
 	"inventoryservice/internal/infrastructure/messaging"
 	infra_obs "inventoryservice/internal/infrastructure/observability"
-	"inventoryservice/observability"
 	"os"
 
 	otelkafka "github.com/Trendyol/otel-kafka-konsumer"
@@ -73,14 +72,14 @@ func (infra *Infrastructure) setupLogger(ctx context.Context) error {
 // setupObservability configures OpenTelemetry logging and tracing
 func (infra *Infrastructure) setupObservability(ctx context.Context) error {
 	// Setup logging SDK
-	otelLogShutdown, err := observability.SetupLoggingSDK(ctx, infra.config)
+	otelLogShutdown, err := infra_obs.SetupLoggingSDK(ctx, infra.config)
 	if err != nil {
 		infra.logger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
 	}
 	infra.otelLogShutdown = otelLogShutdown
 
 	// Setup tracing SDK
-	tp, otelTraceShutdown, err := observability.SetupTracingSDK(ctx, infra.config)
+	tp, otelTraceShutdown, err := infra_obs.SetupTracingSDK(ctx, infra.config)
 	if err != nil {
 		infra.logger.Error("Failed to setup OpenTelemetry tracing", zap.Error(err))
 	}
@@ -201,11 +200,10 @@ func (infra *Infrastructure) Shutdown(ctx context.Context) {
 	}
 
 	// Sync logger
-	if infra.logger != nil {
-		_ = infra.logger.Sync()
+	if err := infra.logger.Sync(); err != nil {
+		// Can't log this error since logger might be closed
+		fmt.Printf("Failed to sync logger: %v\n", err)
 	}
-
-	infra.logger.Info("Infrastructure shutdown complete")
 }
 
 // Getters for accessing infrastructure components

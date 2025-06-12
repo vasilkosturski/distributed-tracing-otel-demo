@@ -4,25 +4,13 @@ import (
 	"context"
 	"time"
 
-	"inventoryservice/events"
+	"inventoryservice/internal/domain"
 	"inventoryservice/internal/infrastructure/observability"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
-
-// Logger interface defines what the service needs for logging
-type Logger interface {
-	Info(msg string, fields ...zap.Field)
-	Error(msg string, fields ...zap.Field)
-}
-
-// Tracer interface defines what the service needs for tracing
-type Tracer interface {
-	Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span)
-}
 
 // InventoryService handles inventory-related business logic
 type InventoryService struct {
@@ -39,7 +27,7 @@ func NewInventoryService(logger observability.Logger, tracer observability.Trace
 }
 
 // ProcessOrderCreated processes an OrderCreated event and returns an InventoryReserved event
-func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order events.OrderCreatedEvent) (*events.InventoryReservedEvent, error) {
+func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order domain.OrderCreatedEvent) (*domain.InventoryReservedEvent, error) {
 	// Create span for inventory checking
 	_, span := s.tracer.Start(ctx, "inventory_check")
 	defer span.End()
@@ -72,7 +60,7 @@ func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order events
 	span.SetStatus(codes.Ok, "Inventory successfully reserved")
 
 	// Create the result event
-	result := &events.InventoryReservedEvent{
+	result := &domain.InventoryReservedEvent{
 		OrderID: order.OrderID,
 	}
 
