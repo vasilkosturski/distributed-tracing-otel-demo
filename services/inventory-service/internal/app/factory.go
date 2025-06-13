@@ -16,19 +16,9 @@ func NewServiceFactory(container *Container) *ServiceFactory {
 	}
 }
 
-// CreateInventoryService creates a new inventory service instance
-func (f *ServiceFactory) CreateInventoryService() inventory.Service {
-	return inventory.NewService(f.container.Logger(), f.container.Tracer())
-}
-
-// CreateMessageHandler creates a new message handler instance
-func (f *ServiceFactory) CreateMessageHandler(inventoryService inventory.Service) inventory.MessageHandler {
-	return inventory.NewMessageHandler(inventoryService, f.container.MessageProducer(), f.container.Logger())
-}
-
 func (f *ServiceFactory) CreateConsumerService() inventory.ConsumerService {
-	inventoryService := f.CreateInventoryService()
-	messageHandler := f.CreateMessageHandler(inventoryService)
+	inventoryService := inventory.NewService(f.container.Logger(), f.container.Tracer())
+	messageHandler := inventory.NewMessageHandler(inventoryService, f.container.MessageProducer(), f.container.Logger())
 
 	return inventory.NewConsumerService(
 		f.container.MessageConsumer(),
