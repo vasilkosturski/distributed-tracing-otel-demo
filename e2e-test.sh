@@ -145,7 +145,7 @@ echo -e "${GREEN}✅ Order service flow validated successfully${NC}"
 echo -e "${YELLOW}🔍 Step 9: Checking for error strings in order service logs...${NC}"
 
 # Filter out harmless Kafka startup errors from order service logs too
-FILTERED_ORDER_LOGS=$(echo "$ORDER_LOGS" | grep -i "error\|exception\|failed\|timeout\|refused" | grep -v "LEADER_NOT_AVAILABLE" | grep -v "Error while fetching metadata")
+FILTERED_ORDER_LOGS=$(echo "$ORDER_LOGS" | grep -i "error\|exception\|failed\|timeout\|refused" | grep -v "LEADER_NOT_AVAILABLE" | grep -v "Error while fetching metadata" || true)
 
 if [ -n "$FILTERED_ORDER_LOGS" ]; then
     echo -e "${RED}❌ Error strings detected in order service logs:${NC}"
@@ -187,7 +187,7 @@ echo -e "${GREEN}✅ No OTEL authorization errors found after business operation
 echo -e "${YELLOW}🔍 Step 12: Checking for any error strings in logs...${NC}"
 
 # Filter out harmless Kafka startup errors
-FILTERED_LOGS=$(echo "$ALL_LOGS" | grep -i "error\|exception\|failed\|timeout\|refused" | grep -v "LEADER_NOT_AVAILABLE" | grep -v "Error while fetching metadata")
+FILTERED_LOGS=$(echo "$ALL_LOGS" | grep -i "error\|exception\|failed\|timeout\|refused" | grep -v "LEADER_NOT_AVAILABLE" | grep -v "Error while fetching metadata" || true)
 
 if [ -n "$FILTERED_LOGS" ]; then
     echo -e "${RED}❌ Error strings detected in logs:${NC}"
