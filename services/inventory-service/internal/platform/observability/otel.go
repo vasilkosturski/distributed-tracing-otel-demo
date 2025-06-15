@@ -9,7 +9,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -17,25 +16,31 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
+// LoggingSDK holds the OpenTelemetry logging components
+type LoggingSDK struct {
+	loggerProvider *sdklog.LoggerProvider
+	shutdownFuncs  []func(context.Context) error
+}
+
+// Close implements io.Closer
+func (sdk *LoggingSDK) Close(ctx context.Context) error {
+	var err error
+	for _, fn := range sdk.shutdownFuncs {
+		err = errors.Join(err, fn(ctx))
+	}
+	sdk.shutdownFuncs = nil
+	return err
+}
+
+// LoggerProvider returns the OpenTelemetry logger provider
+func (sdk *LoggingSDK) LoggerProvider() *sdklog.LoggerProvider {
+	return sdk.loggerProvider
+}
+
 // SetupLoggingSDK initializes OpenTelemetry logging with the provided configuration
-func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (loggerProvider *sdklog.LoggerProvider, shutdown func(context.Context) error, err error) {
-	var shutdownFuncs []func(context.Context) error
-	var currentErr error // To accumulate errors from various setup steps
-
-	shutdown = func(context.Context) error {
-		var err error
-		for _, fn := range shutdownFuncs {
-			err = errors.Join(err, fn(ctx))
-		}
-		shutdownFuncs = nil
-		return err
-	}
-
-	handleErr := func(name string, inErr error) {
-		if inErr != nil {
-			currentErr = errors.Join(currentErr, fmt.Errorf("%s: %w", name, inErr))
-		}
-	}
+func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, error) {
+	sdk := &LoggingSDK{}
+	var currentErr error
 
 	// 1. Setup Resource (contains service metadata)
 	res, err := resource.Merge(
@@ -47,7 +52,7 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (loggerProvider *s
 		),
 	)
 	if err != nil { // If resource creation fails, we can't proceed
-		return nil, nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	// 2. Setup Logger Provider using OTLP/HTTP
@@ -56,7 +61,9 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (loggerProvider *s
 		otlploghttp.WithURLPath(config.LogsPath),
 		otlploghttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
 	)
-	handleErr("OTLP Log Exporter", errExporter)
+	if errExporter != nil {
+		currentErr = errors.Join(currentErr, fmt.Errorf("OTLP Log Exporter: %w", errExporter))
+	}
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
@@ -67,40 +74,43 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (loggerProvider *s
 		)
 
 		// Create the LoggerProvider
-		loggerProvider = sdklog.NewLoggerProvider(
+		sdk.loggerProvider = sdklog.NewLoggerProvider(
 			sdklog.WithProcessor(logProcessor),
 			sdklog.WithResource(res),
 		)
 
-		// Set the global logger provider
-		global.SetLoggerProvider(loggerProvider)
-
 		// Add shutdown function
-		shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
+		sdk.shutdownFuncs = append(sdk.shutdownFuncs, sdk.loggerProvider.Shutdown)
 	}
 
-	return loggerProvider, shutdown, currentErr
+	return sdk, currentErr
+}
+
+// TracingSDK holds the OpenTelemetry tracing components
+type TracingSDK struct {
+	tracerProvider *sdktrace.TracerProvider
+	shutdownFuncs  []func(context.Context) error
+}
+
+// Close implements io.Closer
+func (sdk *TracingSDK) Close(ctx context.Context) error {
+	var err error
+	for _, fn := range sdk.shutdownFuncs {
+		err = errors.Join(err, fn(ctx))
+	}
+	sdk.shutdownFuncs = nil
+	return err
+}
+
+// TracerProvider returns the OpenTelemetry tracer provider
+func (sdk *TracingSDK) TracerProvider() *sdktrace.TracerProvider {
+	return sdk.tracerProvider
 }
 
 // SetupTracingSDK initializes OpenTelemetry tracing with the provided configuration
-func SetupTracingSDK(ctx context.Context, cfg *config.Config) (tp *sdktrace.TracerProvider, shutdown func(context.Context) error, err error) {
-	var shutdownFuncs []func(context.Context) error
+func SetupTracingSDK(ctx context.Context, cfg *config.Config) (*TracingSDK, error) {
+	sdk := &TracingSDK{}
 	var currentErr error
-
-	shutdown = func(context.Context) error {
-		var err error
-		for _, fn := range shutdownFuncs {
-			err = errors.Join(err, fn(ctx))
-		}
-		shutdownFuncs = nil
-		return err
-	}
-
-	handleErr := func(name string, inErr error) {
-		if inErr != nil {
-			currentErr = errors.Join(currentErr, fmt.Errorf("%s: %w", name, inErr))
-		}
-	}
 
 	// 1. Setup Resource (contains service metadata)
 	res, err := resource.Merge(
@@ -112,7 +122,7 @@ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (tp *sdktrace.Trac
 		),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	// Set up context propagation for distributed tracing
@@ -128,7 +138,9 @@ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (tp *sdktrace.Trac
 		otlptracehttp.WithURLPath(config.TracesPath),
 		otlptracehttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
 	)
-	handleErr("OTLP Trace Exporter", errExporter)
+	if errExporter != nil {
+		currentErr = errors.Join(currentErr, fmt.Errorf("OTLP Trace Exporter: %w", errExporter))
+	}
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
@@ -139,19 +151,18 @@ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (tp *sdktrace.Trac
 		)
 
 		// Create the TracerProvider
-		tracerProvider := sdktrace.NewTracerProvider(
+		sdk.tracerProvider = sdktrace.NewTracerProvider(
 			sdktrace.WithSampler(sdktrace.AlwaysSample()),
 			sdktrace.WithResource(res),
 			sdktrace.WithSpanProcessor(traceProcessor),
 		)
 
 		// Set the global tracer provider
-		otel.SetTracerProvider(tracerProvider)
+		otel.SetTracerProvider(sdk.tracerProvider)
 
 		// Add shutdown function
-		shutdownFuncs = append(shutdownFuncs, tracerProvider.Shutdown)
-		tp = tracerProvider
+		sdk.shutdownFuncs = append(sdk.shutdownFuncs, sdk.tracerProvider.Shutdown)
 	}
 
-	return tp, shutdown, currentErr
+	return sdk, currentErr
 }

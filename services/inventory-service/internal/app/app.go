@@ -61,6 +61,6 @@ func (app *Application) Shutdown() {
 
 	// Shutdown container
 	if app.container != nil {
-		app.container.shutdownFunc(context.Background())
+		app.container.Shutdown(context.Background())
 	}
 }

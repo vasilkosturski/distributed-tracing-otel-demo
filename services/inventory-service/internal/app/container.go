@@ -26,7 +26,8 @@ type Container struct {
 	tracer          observability.Tracer
 	messageConsumer kafka.Consumer
 	messageProducer kafka.Producer
-	shutdownFunc    func(context.Context)
+	loggingSDK      *observability.LoggingSDK
+	tracingSDK      *observability.TracingSDK
 }
 
 // NewContainer creates and initializes all infrastructure components
@@ -42,65 +43,31 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		return nil, err
 	}
 
-	enhancedLogger, otelLogShutdown, err := setupOTelLogging(ctx, cfg, basicLogger)
+	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg, basicLogger)
 	if err != nil {
 		return nil, err
 	}
 
 	// Setup tracing infrastructure
-	tp, otelTraceShutdown, err := setupOTelTracing(ctx, cfg, enhancedLogger)
+	tracingSDK, err := setupOTelTracing(ctx, cfg, enhancedLogger)
 	if err != nil {
 		return nil, err
 	}
 
 	// Setup Kafka infrastructure
-	messageConsumer, messageProducer, err := setupKafka(cfg, tp)
+	messageConsumer, messageProducer, err := setupKafka(cfg, tracingSDK.TracerProvider())
 	if err != nil {
 		return nil, err
-	}
-
-	// Create shutdown function that captures cleanup functions
-	shutdownFunc := func(ctx context.Context) {
-		enhancedLogger.Info("Shutting down infrastructure...")
-
-		if messageConsumer != nil {
-			if err := messageConsumer.Close(); err != nil {
-				enhancedLogger.Error("Failed to close message consumer", zap.Error(err))
-			}
-		}
-
-		if messageProducer != nil {
-			if err := messageProducer.Close(); err != nil {
-				enhancedLogger.Error("Failed to close message producer", zap.Error(err))
-			}
-		}
-
-		if otelTraceShutdown != nil {
-			if err := otelTraceShutdown(ctx); err != nil {
-				enhancedLogger.Error("Failed to shutdown OTel tracing", zap.Error(err))
-			}
-		}
-
-		if otelLogShutdown != nil {
-			if err := otelLogShutdown(ctx); err != nil {
-				enhancedLogger.Error("Failed to shutdown OTel logging", zap.Error(err))
-			}
-		}
-
-		if enhancedLogger != nil {
-			_ = enhancedLogger.Sync()
-		}
-
-		enhancedLogger.Info("Infrastructure shutdown complete")
 	}
 
 	container := &Container{
 		config:          cfg,
 		logger:          enhancedLogger,
-		tracer:          tp.Tracer(config.ServiceName),
+		tracer:          tracingSDK.TracerProvider().Tracer(config.ServiceName),
 		messageConsumer: messageConsumer,
 		messageProducer: messageProducer,
-		shutdownFunc:    shutdownFunc,
+		loggingSDK:      loggingSDK,
+		tracingSDK:      tracingSDK,
 	}
 
 	return container, nil
@@ -114,15 +81,15 @@ func createBasicLogger() (observability.Logger, error) {
 	return logger, nil
 }
 
-func setupOTelLogging(ctx context.Context, cfg *config.Config, basicLogger observability.Logger) (observability.Logger, func(context.Context) error, error) {
-	loggerProvider, otelLogShutdown, err := observability.SetupLoggingSDK(ctx, cfg)
+func setupOTelLogging(ctx context.Context, cfg *config.Config, basicLogger observability.Logger) (observability.Logger, *observability.LoggingSDK, error) {
+	loggingSDK, err := observability.SetupLoggingSDK(ctx, cfg)
 	if err != nil {
 		basicLogger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
 	}
 
 	// Create enhanced logger with OTel integration using the explicit provider
 	otelZapCore := otelzap.NewCore("inventory-service",
-		otelzap.WithLoggerProvider(loggerProvider),
+		otelzap.WithLoggerProvider(loggingSDK.LoggerProvider()),
 	)
 
 	consoleEncoderConfig := zap.NewProductionEncoderConfig()
@@ -141,15 +108,15 @@ func setupOTelLogging(ctx context.Context, cfg *config.Config, basicLogger obser
 	)
 
 	enhancedLogger.Info("Logger initialized with OpenTelemetry integration")
-	return enhancedLogger, otelLogShutdown, err
+	return enhancedLogger, loggingSDK, err
 }
 
-func setupOTelTracing(ctx context.Context, cfg *config.Config, logger observability.Logger) (trace.TracerProvider, func(context.Context) error, error) {
-	tp, otelTraceShutdown, err := observability.SetupTracingSDK(ctx, cfg)
+func setupOTelTracing(ctx context.Context, cfg *config.Config, logger observability.Logger) (*observability.TracingSDK, error) {
+	tracingSDK, err := observability.SetupTracingSDK(ctx, cfg)
 	if err != nil {
 		logger.Error("Failed to setup OpenTelemetry tracing", zap.Error(err))
 	}
-	return tp, otelTraceShutdown, err
+	return tracingSDK, err
 }
 
 // setupKafkaWithTracer initializes Kafka consumer and producer with OpenTelemetry
@@ -189,6 +156,41 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
 	}
 
 	return reader, writer, nil
+}
+
+// Shutdown gracefully shuts down all infrastructure components
+func (c *Container) Shutdown(ctx context.Context) {
+	c.logger.Info("Shutting down infrastructure...")
+
+	if c.messageConsumer != nil {
+		if err := c.messageConsumer.Close(); err != nil {
+			c.logger.Error("Failed to close message consumer", zap.Error(err))
+		}
+	}
+
+	if c.messageProducer != nil {
+		if err := c.messageProducer.Close(); err != nil {
+			c.logger.Error("Failed to close message producer", zap.Error(err))
+		}
+	}
+
+	if c.tracingSDK != nil {
+		if err := c.tracingSDK.Close(ctx); err != nil {
+			c.logger.Error("Failed to shutdown OTel tracing", zap.Error(err))
+		}
+	}
+
+	if c.loggingSDK != nil {
+		if err := c.loggingSDK.Close(ctx); err != nil {
+			c.logger.Error("Failed to shutdown OTel logging", zap.Error(err))
+		}
+	}
+
+	if c.logger != nil {
+		_ = c.logger.Sync()
+	}
+
+	c.logger.Info("Infrastructure shutdown complete")
 }
 
 // Getters for accessing infrastructure components
