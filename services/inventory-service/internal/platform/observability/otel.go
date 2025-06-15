@@ -18,7 +18,7 @@ import (
 )
 
 // SetupLoggingSDK initializes OpenTelemetry logging with the provided configuration
-func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (shutdown func(context.Context) error, err error) {
+func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (loggerProvider *sdklog.LoggerProvider, shutdown func(context.Context) error, err error) {
 	var shutdownFuncs []func(context.Context) error
 	var currentErr error // To accumulate errors from various setup steps
 
@@ -47,7 +47,7 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (shutdown func(con
 		),
 	)
 	if err != nil { // If resource creation fails, we can't proceed
-		return nil, fmt.Errorf("failed to create resource: %w", err)
+		return nil, nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	// 2. Setup Logger Provider using OTLP/HTTP
@@ -67,7 +67,7 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (shutdown func(con
 		)
 
 		// Create the LoggerProvider
-		loggerProvider := sdklog.NewLoggerProvider(
+		loggerProvider = sdklog.NewLoggerProvider(
 			sdklog.WithProcessor(logProcessor),
 			sdklog.WithResource(res),
 		)
@@ -79,7 +79,7 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (shutdown func(con
 		shutdownFuncs = append(shutdownFuncs, loggerProvider.Shutdown)
 	}
 
-	return shutdown, currentErr
+	return loggerProvider, shutdown, currentErr
 }
 
 // SetupTracingSDK initializes OpenTelemetry tracing with the provided configuration

@@ -12,7 +12,6 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
@@ -116,16 +115,14 @@ func createBasicLogger() (observability.Logger, error) {
 }
 
 func setupOTelLogging(ctx context.Context, cfg *config.Config, basicLogger observability.Logger) (observability.Logger, func(context.Context) error, error) {
-	otelLogShutdown, err := observability.SetupLoggingSDK(ctx, cfg)
+	loggerProvider, otelLogShutdown, err := observability.SetupLoggingSDK(ctx, cfg)
 	if err != nil {
 		basicLogger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
 	}
 
-	// Create enhanced logger with OTel integration
-	logProvider := global.GetLoggerProvider()
-	instrumentationScopeName := "inventory-service"
-	otelZapCore := otelzap.NewCore(instrumentationScopeName,
-		otelzap.WithLoggerProvider(logProvider),
+	// Create enhanced logger with OTel integration using the explicit provider
+	otelZapCore := otelzap.NewCore("inventory-service",
+		otelzap.WithLoggerProvider(loggerProvider),
 	)
 
 	consoleEncoderConfig := zap.NewProductionEncoderConfig()
@@ -192,11 +189,6 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
 	}
 
 	return reader, writer, nil
-}
-
-// Shutdown gracefully shuts down all infrastructure components
-func (c *Container) Shutdown(ctx context.Context) {
-	c.shutdownFunc(ctx)
 }
 
 // Getters for accessing infrastructure components
