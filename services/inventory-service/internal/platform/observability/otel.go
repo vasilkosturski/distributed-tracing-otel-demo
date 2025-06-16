@@ -16,14 +16,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-// LoggingSDK holds the OpenTelemetry logging components
-type LoggingSDK struct {
-	loggerProvider *sdklog.LoggerProvider
-	shutdownFuncs  []func(context.Context) error
+// BaseSDK holds common fields for both logging and tracing SDKs
+type BaseSDK struct {
+	shutdownFuncs []func(context.Context) error
 }
 
 // Close implements io.Closer
-func (sdk *LoggingSDK) Close(ctx context.Context) error {
+func (sdk *BaseSDK) Close(ctx context.Context) error {
 	var err error
 	for _, fn := range sdk.shutdownFuncs {
 		err = errors.Join(err, fn(ctx))
@@ -32,9 +31,53 @@ func (sdk *LoggingSDK) Close(ctx context.Context) error {
 	return err
 }
 
+// LoggingSDK holds the OpenTelemetry logging components
+type LoggingSDK struct {
+	BaseSDK
+	loggerProvider *sdklog.LoggerProvider
+}
+
 // LoggerProvider returns the OpenTelemetry logger provider
 func (sdk *LoggingSDK) LoggerProvider() *sdklog.LoggerProvider {
 	return sdk.loggerProvider
+}
+
+// TracingSDK holds the OpenTelemetry tracing components
+type TracingSDK struct {
+	BaseSDK
+	tracerProvider *sdktrace.TracerProvider
+}
+
+// TracerProvider returns the OpenTelemetry tracer provider
+func (sdk *TracingSDK) TracerProvider() *sdktrace.TracerProvider {
+	return sdk.tracerProvider
+}
+
+// createResource creates a common OpenTelemetry resource with service metadata
+func createResource() (*resource.Resource, error) {
+	return resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(config.ServiceName),
+			semconv.ServiceVersion(config.ServiceVersion),
+		),
+	)
+}
+
+// otlpEndpointConfig returns common OTLP endpoint configuration
+func otlpEndpointConfig(cfg *config.Config, path string) map[string]string {
+	return map[string]string{
+		"Authorization": cfg.OtelAuthHeader,
+	}
+}
+
+// handleSetupError handles errors during SDK setup
+func handleSetupError(name string, err error, currentErr error) error {
+	if err != nil {
+		return errors.Join(currentErr, fmt.Errorf("%s: %w", name, err))
+	}
+	return currentErr
 }
 
 // SetupLoggingSDK initializes OpenTelemetry logging with the provided configuration
@@ -43,15 +86,8 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, erro
 	var currentErr error
 
 	// 1. Setup Resource (contains service metadata)
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(config.ServiceName),
-			semconv.ServiceVersion(config.ServiceVersion),
-		),
-	)
-	if err != nil { // If resource creation fails, we can't proceed
+	res, err := createResource()
+	if err != nil {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
 
@@ -59,11 +95,9 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, erro
 	logExporter, errExporter := otlploghttp.New(ctx,
 		otlploghttp.WithEndpoint(cfg.OtelEndpoint),
 		otlploghttp.WithURLPath(config.LogsPath),
-		otlploghttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
+		otlploghttp.WithHeaders(otlpEndpointConfig(cfg, config.LogsPath)),
 	)
-	if errExporter != nil {
-		currentErr = errors.Join(currentErr, fmt.Errorf("OTLP Log Exporter: %w", errExporter))
-	}
+	currentErr = handleSetupError("OTLP Log Exporter", errExporter, currentErr)
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
@@ -86,41 +120,13 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, erro
 	return sdk, currentErr
 }
 
-// TracingSDK holds the OpenTelemetry tracing components
-type TracingSDK struct {
-	tracerProvider *sdktrace.TracerProvider
-	shutdownFuncs  []func(context.Context) error
-}
-
-// Close implements io.Closer
-func (sdk *TracingSDK) Close(ctx context.Context) error {
-	var err error
-	for _, fn := range sdk.shutdownFuncs {
-		err = errors.Join(err, fn(ctx))
-	}
-	sdk.shutdownFuncs = nil
-	return err
-}
-
-// TracerProvider returns the OpenTelemetry tracer provider
-func (sdk *TracingSDK) TracerProvider() *sdktrace.TracerProvider {
-	return sdk.tracerProvider
-}
-
 // SetupTracingSDK initializes OpenTelemetry tracing with the provided configuration
 func SetupTracingSDK(ctx context.Context, cfg *config.Config) (*TracingSDK, error) {
 	sdk := &TracingSDK{}
 	var currentErr error
 
 	// 1. Setup Resource (contains service metadata)
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(config.ServiceName),
-			semconv.ServiceVersion(config.ServiceVersion),
-		),
-	)
+	res, err := createResource()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource: %w", err)
 	}
@@ -136,11 +142,9 @@ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (*TracingSDK, erro
 	traceExporter, errExporter := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpoint(cfg.OtelEndpoint),
 		otlptracehttp.WithURLPath(config.TracesPath),
-		otlptracehttp.WithHeaders(map[string]string{"Authorization": cfg.OtelAuthHeader}),
+		otlptracehttp.WithHeaders(otlpEndpointConfig(cfg, config.TracesPath)),
 	)
-	if errExporter != nil {
-		currentErr = errors.Join(currentErr, fmt.Errorf("OTLP Trace Exporter: %w", errExporter))
-	}
+	currentErr = handleSetupError("OTLP Trace Exporter", errExporter, currentErr)
 
 	// Proceed only if exporter was created successfully
 	if errExporter == nil {
