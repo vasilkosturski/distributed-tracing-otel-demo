@@ -37,16 +37,7 @@ func NewMessageHandler(inventoryService Service, producer kafka.Producer, logger
 // HandleOrderCreated processes an OrderCreated message from Kafka
 func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkago.Message) error {
 	// Extract trace context to connect spans across services
-	propagator := otel.GetTextMapPropagator()
-	carrier := propagation.MapCarrier{}
-
-	// Extract headers from Kafka message to our carrier
-	for _, header := range msg.Headers {
-		carrier[string(header.Key)] = string(header.Value)
-	}
-
-	// Extract the context from the carrier - this will have the parent span info
-	msgCtx := propagator.Extract(ctx, carrier)
+	msgCtx := h.extractTraceContext(ctx, msg.Headers)
 
 	h.logger.Info("📨 Raw Kafka message received",
 		zap.ByteString("key", msg.Key),
@@ -75,12 +66,32 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkag
 
 	h.logger.Info("✅ Inventory reserved", zap.String("order_id", reservedEvent.OrderID))
 
+	// Publish the inventory reserved event
+	return h.publishInventoryReserved(msgCtx, reservedEvent)
+}
+
+// extractTraceContext extracts OpenTelemetry trace context from Kafka message headers
+func (h *KafkaMessageHandler) extractTraceContext(ctx context.Context, headers []kafkago.Header) context.Context {
+	propagator := otel.GetTextMapPropagator()
+	carrier := propagation.MapCarrier{}
+
+	// Extract headers from Kafka message to our carrier
+	for _, header := range headers {
+		carrier[string(header.Key)] = string(header.Value)
+	}
+
+	// Extract the context from the carrier - this will have the parent span info
+	return propagator.Extract(ctx, carrier)
+}
+
+// publishInventoryReserved publishes an InventoryReserved event to Kafka
+func (h *KafkaMessageHandler) publishInventoryReserved(ctx context.Context, event *InventoryReservedEvent) error {
 	// Serialize the response event
-	payload, err := json.Marshal(*reservedEvent)
+	payload, err := json.Marshal(*event)
 	if err != nil {
 		h.logger.Error("❌ Failed to serialize InventoryReserved event",
 			zap.Error(err),
-			zap.String("order_id", order.OrderID),
+			zap.String("order_id", event.OrderID),
 		)
 		return err
 	}
@@ -88,17 +99,17 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkag
 	// Create a message with context that will propagate the trace
 	kafkaMsg := kafkago.Message{
 		Value: payload,
-		Key:   []byte(order.OrderID),
+		Key:   []byte(event.OrderID),
 	}
 
-	if err := h.producer.WriteMessage(msgCtx, kafkaMsg); err != nil {
+	if err := h.producer.WriteMessage(ctx, kafkaMsg); err != nil {
 		h.logger.Error("❌ Failed to publish InventoryReserved event",
 			zap.Error(err),
-			zap.String("order_id", order.OrderID),
+			zap.String("order_id", event.OrderID),
 		)
 		return err
 	}
 
-	h.logger.Info("📤 Sent InventoryReserved event", zap.String("order_id", order.OrderID))
+	h.logger.Info("📤 Sent InventoryReserved event", zap.String("order_id", event.OrderID))
 	return nil
 }
