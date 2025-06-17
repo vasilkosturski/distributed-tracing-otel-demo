@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"inventoryservice/internal/config"
+	"inventoryservice/internal/inventory"
 	"inventoryservice/internal/platform/kafka"
 	"inventoryservice/internal/platform/observability"
 	"os"
@@ -24,10 +25,10 @@ type Container struct {
 	config          *config.Config
 	logger          observability.Logger
 	tracer          observability.Tracer
-	messageConsumer kafka.Consumer
 	messageProducer kafka.Producer
 	loggingSDK      *observability.LoggingSDK
 	tracingSDK      *observability.TracingSDK
+	consumerService inventory.ConsumerService
 }
 
 // NewContainer creates and initializes all infrastructure components
@@ -64,11 +65,25 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		config:          cfg,
 		logger:          enhancedLogger,
 		tracer:          tracingSDK.TracerProvider().Tracer(config.ServiceName),
-		messageConsumer: messageConsumer,
 		messageProducer: messageProducer,
 		loggingSDK:      loggingSDK,
 		tracingSDK:      tracingSDK,
 	}
+
+	// Create the message handler (local variable)
+	inventoryService := inventory.NewService(container.logger, container.tracer)
+	messageHandler := inventory.NewMessageHandler(
+		inventoryService,
+		container.messageProducer,
+		container.logger,
+	)
+
+	// Create the consumer service directly (using local variables)
+	container.consumerService = inventory.NewConsumerService(
+		messageConsumer,
+		messageHandler,
+		container.logger,
+	)
 
 	return container, nil
 }
@@ -162,12 +177,6 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
 func (c *Container) Shutdown(ctx context.Context) {
 	c.logger.Info("Shutting down infrastructure...")
 
-	if c.messageConsumer != nil {
-		if err := c.messageConsumer.Close(); err != nil {
-			c.logger.Error("Failed to close message consumer", zap.Error(err))
-		}
-	}
-
 	if c.messageProducer != nil {
 		if err := c.messageProducer.Close(); err != nil {
 			c.logger.Error("Failed to close message producer", zap.Error(err))
@@ -196,5 +205,7 @@ func (c *Container) Shutdown(ctx context.Context) {
 // Getters for accessing infrastructure components
 func (c *Container) Logger() observability.Logger    { return c.logger }
 func (c *Container) Tracer() observability.Tracer    { return c.tracer }
-func (c *Container) MessageConsumer() kafka.Consumer { return c.messageConsumer }
 func (c *Container) MessageProducer() kafka.Producer { return c.messageProducer }
+func (c *Container) ConsumerService() inventory.ConsumerService {
+	return c.consumerService
+}
