@@ -71,7 +71,7 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	}
 
 	// Create the message handler (local variable)
-	inventoryService := inventory.NewService(container.logger, container.tracer)
+	inventoryService := inventory.NewInventoryService(container.logger, container.tracer)
 	messageHandler := inventory.NewMessageHandler(
 		inventoryService,
 		container.messageProducer,

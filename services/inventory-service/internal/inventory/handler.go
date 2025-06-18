@@ -20,13 +20,13 @@ type MessageHandler interface {
 
 // KafkaMessageHandler handles Kafka message processing for inventory events
 type KafkaMessageHandler struct {
-	inventoryService Service
+	inventoryService *InventoryService
 	producer         kafka.Producer
 	logger           observability.Logger
 }
 
 // NewMessageHandler creates a new MessageHandler instance with explicit dependencies
-func NewMessageHandler(inventoryService Service, producer kafka.Producer, logger observability.Logger) MessageHandler {
+func NewMessageHandler(inventoryService *InventoryService, producer kafka.Producer, logger observability.Logger) MessageHandler {
 	return &KafkaMessageHandler{
 		inventoryService: inventoryService,
 		producer:         producer,
