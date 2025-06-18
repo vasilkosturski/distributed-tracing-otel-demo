@@ -39,12 +39,7 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	}
 
 	// Setup logging infrastructure
-	basicLogger, err := createBasicLogger()
-	if err != nil {
-		return nil, err
-	}
-
-	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg, basicLogger)
+	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -88,15 +83,13 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	return container, nil
 }
 
-func createBasicLogger() (observability.Logger, error) {
-	logger, err := zap.NewProduction()
+func setupOTelLogging(ctx context.Context, cfg *config.Config) (observability.Logger, *observability.LoggingSDK, error) {
+	// Create basic logger for error reporting during setup
+	basicLogger, err := zap.NewProduction()
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("failed to create basic logger: %w", err)
 	}
-	return logger, nil
-}
 
-func setupOTelLogging(ctx context.Context, cfg *config.Config, basicLogger observability.Logger) (observability.Logger, *observability.LoggingSDK, error) {
 	loggingSDK, err := observability.SetupLoggingSDK(ctx, cfg)
 	if err != nil {
 		basicLogger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
