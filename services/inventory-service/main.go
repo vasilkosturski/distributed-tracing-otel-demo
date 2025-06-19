@@ -15,11 +15,11 @@ func main() {
 func run() error {
 	ctx := context.Background()
 
-	application, err := app.NewApplication(ctx)
+	application, err := app.NewApplication()
 	if err != nil {
 		return err
 	}
-	defer application.Shutdown()
+	defer application.Shutdown(ctx)
 
 	return application.Run()
 }

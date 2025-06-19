@@ -26,9 +26,8 @@ type Container struct {
 	logger          observability.Logger
 	tracer          observability.Tracer
 	messageProducer kafka.Producer
-	loggingSDK      *observability.LoggingSDK
-	tracingSDK      *observability.TracingSDK
 	consumerService inventory.ConsumerService
+	shutdownFuncs   []func(context.Context) error
 }
 
 // NewContainer creates and initializes all infrastructure components
@@ -38,10 +37,19 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	container := &Container{
+		config:        cfg,
+		shutdownFuncs: make([]func(context.Context) error, 0),
+	}
+
 	// Setup logging infrastructure
 	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg)
 	if err != nil {
 		return nil, err
+	}
+	container.logger = enhancedLogger
+	if loggingSDK != nil {
+		container.shutdownFuncs = append(container.shutdownFuncs, loggingSDK.Close)
 	}
 
 	// Setup tracing infrastructure
@@ -49,21 +57,22 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	container.tracer = tracingSDK.TracerProvider().Tracer(config.ServiceName)
+	if tracingSDK != nil {
+		container.shutdownFuncs = append(container.shutdownFuncs, tracingSDK.Close)
+	}
 
 	// Setup Kafka infrastructure
 	messageConsumer, messageProducer, err := setupKafka(cfg, tracingSDK.TracerProvider())
 	if err != nil {
 		return nil, err
 	}
+	container.messageProducer = messageProducer
 
-	container := &Container{
-		config:          cfg,
-		logger:          enhancedLogger,
-		tracer:          tracingSDK.TracerProvider().Tracer(config.ServiceName),
-		messageProducer: messageProducer,
-		loggingSDK:      loggingSDK,
-		tracingSDK:      tracingSDK,
-	}
+	// Add message producer shutdown
+	container.shutdownFuncs = append(container.shutdownFuncs, func(ctx context.Context) error {
+		return messageProducer.Close()
+	})
 
 	// Create the message handler (local variable)
 	inventoryService := inventory.NewInventoryService(container.logger, container.tracer)
@@ -166,33 +175,27 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
 	return reader, writer, nil
 }
 
-// Shutdown gracefully shuts down all infrastructure components
-func (c *Container) Shutdown(ctx context.Context) {
+// Close gracefully shuts down all infrastructure components
+func (c *Container) Close(ctx context.Context) error {
 	c.logger.Info("Shutting down infrastructure...")
 
-	if c.messageProducer != nil {
-		if err := c.messageProducer.Close(); err != nil {
-			c.logger.Error("Failed to close message producer", zap.Error(err))
+	var closeErr error
+	for _, shutdownFunc := range c.shutdownFuncs {
+		if err := shutdownFunc(ctx); err != nil {
+			c.logger.Error("Error during shutdown", zap.Error(err))
+			if closeErr == nil {
+				closeErr = err
+			}
 		}
 	}
 
-	if c.tracingSDK != nil {
-		if err := c.tracingSDK.Close(ctx); err != nil {
-			c.logger.Error("Failed to shutdown OTel tracing", zap.Error(err))
-		}
-	}
-
-	if c.loggingSDK != nil {
-		if err := c.loggingSDK.Close(ctx); err != nil {
-			c.logger.Error("Failed to shutdown OTel logging", zap.Error(err))
-		}
-	}
-
+	// Sync logger as final step
 	if c.logger != nil {
 		_ = c.logger.Sync()
 	}
 
 	c.logger.Info("Infrastructure shutdown complete")
+	return closeErr
 }
 
 // Getters for accessing infrastructure components
