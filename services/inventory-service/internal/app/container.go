@@ -23,8 +23,8 @@ import (
 // Container holds expensive-to-create singleton resources and dependencies
 type Container struct {
 	config          *config.Config
-	logger          observability.Logger
-	tracer          observability.Tracer
+	logger          *zap.Logger
+	tracer          trace.Tracer
 	messageProducer kafka.Producer
 	consumerService inventory.ConsumerService
 	shutdownFuncs   []func(context.Context) error
@@ -92,7 +92,7 @@ func NewContainer(ctx context.Context) (*Container, error) {
 	return container, nil
 }
 
-func setupOTelLogging(ctx context.Context, cfg *config.Config) (observability.Logger, *observability.LoggingSDK, error) {
+func setupOTelLogging(ctx context.Context, cfg *config.Config) (*zap.Logger, *observability.LoggingSDK, error) {
 	// Create basic logger for error reporting during setup
 	basicLogger, err := zap.NewProduction()
 	if err != nil {
@@ -128,7 +128,7 @@ func setupOTelLogging(ctx context.Context, cfg *config.Config) (observability.Lo
 	return enhancedLogger, loggingSDK, err
 }
 
-func setupOTelTracing(ctx context.Context, cfg *config.Config, logger observability.Logger) (*observability.TracingSDK, error) {
+func setupOTelTracing(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*observability.TracingSDK, error) {
 	tracingSDK, err := observability.SetupTracingSDK(ctx, cfg)
 	if err != nil {
 		logger.Error("Failed to setup OpenTelemetry tracing", zap.Error(err))
@@ -199,8 +199,8 @@ func (c *Container) Close(ctx context.Context) error {
 }
 
 // Getters for accessing infrastructure components
-func (c *Container) Logger() observability.Logger    { return c.logger }
-func (c *Container) Tracer() observability.Tracer    { return c.tracer }
+func (c *Container) Logger() *zap.Logger             { return c.logger }
+func (c *Container) Tracer() trace.Tracer            { return c.tracer }
 func (c *Container) MessageProducer() kafka.Producer { return c.messageProducer }
 func (c *Container) ConsumerService() inventory.ConsumerService {
 	return c.consumerService

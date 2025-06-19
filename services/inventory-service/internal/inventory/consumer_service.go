@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"inventoryservice/internal/platform/kafka"
-	"inventoryservice/internal/platform/observability"
 
 	"go.uber.org/zap"
 )
@@ -17,10 +16,10 @@ type ConsumerService interface {
 type KafkaConsumerService struct {
 	consumer       kafka.Consumer
 	messageHandler MessageHandler
-	logger         observability.Logger
+	logger         *zap.Logger
 }
 
-func NewConsumerService(consumer kafka.Consumer, messageHandler MessageHandler, logger observability.Logger) ConsumerService {
+func NewConsumerService(consumer kafka.Consumer, messageHandler MessageHandler, logger *zap.Logger) ConsumerService {
 	return &KafkaConsumerService{
 		consumer:       consumer,
 		messageHandler: messageHandler,
