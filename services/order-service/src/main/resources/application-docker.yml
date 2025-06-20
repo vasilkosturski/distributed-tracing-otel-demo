@@ -7,10 +7,9 @@ spring:
   
   kafka:
     bootstrap-servers: ${KAFKA_BROKER:kafka:9093}
-    producer:
+        producer:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
-# Logging configuration
 logging:
   level:
     com.vkontech.orderservice: INFO

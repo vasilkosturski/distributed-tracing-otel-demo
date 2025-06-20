@@ -16,9 +16,8 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
     producer:
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
-# Service metadata for tracing (constants like Go service)
 otel:
   service:
     name: order-service

@@ -1,8 +1,5 @@
 version: '3.8'
 
-# Full stack compose file - everything runs in Docker
-# Run with: docker compose -f docker-compose.full.yml up --build
-
 services:
   postgres:
     image: postgres:13
@@ -60,16 +57,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Database connection (Docker internal)
       - DATABASE_URL=jdbc:postgresql://postgres:5432/orders_db
-      - DATABASE_USER=postgres
-      - DATABASE_PASSWORD=password
-      # Kafka connection (Docker internal)
       - KAFKA_BROKER=kafka:9093
-      # Additional Spring Boot configuration for Docker
       - SPRING_PROFILES_ACTIVE=docker
     env_file:
-      # Load OTEL credentials from .env file
       - ./services/order-service/.env
     depends_on:
       - postgres
@@ -82,10 +73,8 @@ services:
       context: ./services/inventory-service
       dockerfile: Dockerfile
     environment:
-      # Kafka connection (Docker internal)
       - KAFKA_BROKER=kafka:9093
     env_file:
-      # Load OTEL credentials from .env file
       - ./services/inventory-service/.env
     depends_on:
       - kafka

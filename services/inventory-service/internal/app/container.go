@@ -20,7 +20,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Container holds expensive-to-create singleton resources and dependencies
 type Container struct {
 	config          *config.Config
 	logger          *zap.Logger
@@ -30,7 +29,6 @@ type Container struct {
 	shutdownFuncs   []func(context.Context) error
 }
 
-// NewContainer creates and initializes all infrastructure components
 func NewContainer(ctx context.Context) (*Container, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -42,7 +40,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		shutdownFuncs: make([]func(context.Context) error, 0),
 	}
 
-	// Setup logging infrastructure
 	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -52,7 +49,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		container.shutdownFuncs = append(container.shutdownFuncs, loggingSDK.Close)
 	}
 
-	// Setup tracing infrastructure
 	tracingSDK, err := setupOTelTracing(ctx, cfg, enhancedLogger)
 	if err != nil {
 		return nil, err
@@ -62,19 +58,16 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		container.shutdownFuncs = append(container.shutdownFuncs, tracingSDK.Close)
 	}
 
-	// Setup Kafka infrastructure
 	messageConsumer, messageProducer, err := setupKafka(cfg, tracingSDK.TracerProvider())
 	if err != nil {
 		return nil, err
 	}
 	container.messageProducer = messageProducer
 
-	// Add message producer shutdown
 	container.shutdownFuncs = append(container.shutdownFuncs, func(ctx context.Context) error {
 		return messageProducer.Close()
 	})
 
-	// Create the message handler (local variable)
 	inventoryService := inventory.NewInventoryService(container.logger, container.tracer)
 	messageHandler := inventory.NewMessageHandler(
 		inventoryService,
@@ -82,7 +75,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
 		container.logger,
 	)
 
-	// Create the consumer service directly (using local variables)
 	container.consumerService = inventory.NewConsumerService(
 		messageConsumer,
 		messageHandler,
@@ -93,7 +85,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
 }
 
 func setupOTelLogging(ctx context.Context, cfg *config.Config) (*zap.Logger, *observability.LoggingSDK, error) {
-	// Create basic logger for error reporting during setup
 	basicLogger, err := zap.NewProduction()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create basic logger: %w", err)
@@ -104,7 +95,6 @@ func setupOTelLogging(ctx context.Context, cfg *config.Config) (*zap.Logger, *ob
 		basicLogger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
 	}
 
-	// Create enhanced logger with OTel integration using the explicit provider
 	otelZapCore := otelzap.NewCore("inventory-service",
 		otelzap.WithLoggerProvider(loggingSDK.LoggerProvider()),
 	)
@@ -136,7 +126,6 @@ func setupOTelTracing(ctx context.Context, cfg *config.Config, logger *zap.Logge
 	return tracingSDK, err
 }
 
-// setupKafkaWithTracer initializes Kafka consumer and producer with OpenTelemetry
 func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, kafka.Producer, error) {
 	readerConfig := kafkago.ReaderConfig{
 		Brokers: []string{cfg.KafkaBroker},
@@ -175,7 +164,6 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
 	return reader, writer, nil
 }
 
-// Close gracefully shuts down all infrastructure components
 func (c *Container) Close(ctx context.Context) error {
 	c.logger.Info("Shutting down infrastructure...")
 
@@ -189,7 +177,6 @@ func (c *Container) Close(ctx context.Context) error {
 		}
 	}
 
-	// Sync logger as final step
 	if c.logger != nil {
 		_ = c.logger.Sync()
 	}
@@ -198,7 +185,6 @@ func (c *Container) Close(ctx context.Context) error {
 	return closeErr
 }
 
-// Getters for accessing infrastructure components
 func (c *Container) Logger() *zap.Logger             { return c.logger }
 func (c *Container) Tracer() trace.Tracer            { return c.tracer }
 func (c *Container) MessageProducer() kafka.Producer { return c.messageProducer }

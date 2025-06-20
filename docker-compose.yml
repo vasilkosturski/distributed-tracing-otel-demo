@@ -1,15 +1,5 @@
 version: '3.8'
 
-# Default compose file - Infrastructure only (for local development)
-# Services run locally, infrastructure runs in Docker
-# 
-# Usage:
-#   docker compose up           - Start infrastructure only
-#   docker compose up -d        - Start infrastructure in background
-#   docker compose down         - Stop infrastructure
-#
-# For full stack: docker compose -f docker-compose.full.yml up --build
-
 services:
   postgres:
     image: postgres:13

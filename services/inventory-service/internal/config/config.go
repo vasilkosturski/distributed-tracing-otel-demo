@@ -6,13 +6,11 @@ import (
 	"time"
 )
 
-// Service configuration constants
 const (
 	ServiceName    = "inventory-service"
 	ServiceVersion = "0.1.0"
 )
 
-// Kafka configuration constants
 const (
 	OrderCreatedTopic = "OrderCreated"
 	InventoryTopic    = "InventoryReserved"
@@ -21,7 +19,6 @@ const (
 	BatchSize         = 100
 )
 
-// OpenTelemetry configuration constants
 const (
 	LogsPath      = "/otlp/v1/logs"   // Grafana Cloud OTLP path
 	TracesPath    = "/otlp/v1/traces" // Grafana Cloud OTLP path
@@ -29,15 +26,12 @@ const (
 	MaxQueueSize  = 2048
 )
 
-// Config holds environment-specific configuration
 type Config struct {
-	// Only the things that change between environments
 	KafkaBroker    string
 	OtelEndpoint   string
 	OtelAuthHeader string
 }
 
-// LoadConfig loads configuration from environment variables with validation
 func LoadConfig() (*Config, error) {
 	config := &Config{
 		KafkaBroker:    os.Getenv("KAFKA_BROKER"),
@@ -45,7 +39,6 @@ func LoadConfig() (*Config, error) {
 		OtelAuthHeader: os.Getenv("OTEL_AUTH_HEADER"),
 	}
 
-	// Validate all required configuration
 	if config.KafkaBroker == "" {
 		return nil, fmt.Errorf("KAFKA_BROKER environment variable is required")
 	}

@@ -7,14 +7,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Application represents the main application structure
 type Application struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	container *Container
 }
 
-// NewApplication creates and initializes a new application instance
 func NewApplication() (*Application, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -34,12 +32,10 @@ func NewApplication() (*Application, error) {
 	return app, nil
 }
 
-// Run starts the main event processing loop
 func (app *Application) Run() error {
 	return app.container.ConsumerService().Start(app.ctx)
 }
 
-// Shutdown gracefully shuts down the application
 func (app *Application) Shutdown(ctx context.Context) {
 	app.container.Logger().Info("Application shutdown initiated")
 
