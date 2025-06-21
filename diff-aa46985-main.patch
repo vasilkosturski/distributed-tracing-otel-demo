@@ -1,0 +1,1562 @@
+diff --git a/FEATURE_SUMMARY.md b/FEATURE_SUMMARY.md
+deleted file mode 100644
+index c42ad10..0000000
+--- a/FEATURE_SUMMARY.md
++++ /dev/null
+@@ -1,106 +0,0 @@
+-# Feature Branch: Environment-Based Configuration
+-
+-## 🎯 **Overview**
+-This branch transforms the distributed tracing demo from hardcoded configuration to a flexible, environment-based setup with two operational modes.
+-
+-## 🚀 **Key Changes**
+-
+-### **1. Environment-Based Configuration**
+-- **Java Service**: All config via environment variables (database, Kafka, OpenTelemetry)
+-- **Go Service**: Simplified config loading from environment only
+-- **Security**: Real credentials in `.env`, placeholders in `.env.example`
+-
+-### **2. Dual Operational Modes**
+-
+-#### **Mode 1: Hybrid Development (Default)**
+-```bash
+-docker compose up -d          # Infrastructure only
+-# Run services locally in IDE or terminal
+-```
+-- **Services**: Run locally (debuggable)
+-- **Infrastructure**: Docker (PostgreSQL, Kafka, Zookeeper)
+-- **Perfect for**: Daily development, debugging, testing
+-
+-#### **Mode 2: Full Docker**
+-```bash
+-docker compose -f docker-compose.full.yml up --build
+-```
+-- **Everything**: Runs in Docker containers
+-- **Perfect for**: Integration testing, deployment simulation
+-
+-### **3. Developer Experience Improvements**
+-
+-#### **VS Code Integration**
+-- **Launch configurations** for both services
+-- **Environment loading** from `.env` files
+-- **Debugging support** with breakpoints
+-
+-#### **IntelliJ Integration**
+-- **Pre-configured run configuration** with OpenTelemetry agent
+-- **Environment variables** loaded automatically
+-
+-#### **Scripts & Documentation**
+-- **`start-debug.sh`**: One-command startup for both services
+-- **Service READMEs**: Detailed setup instructions
+-- **Updated main README**: Clear operational mode documentation
+-
+-## 📁 **New Files**
+-
+-```
+-├── docker-compose.yml           # Infrastructure only (default)
+-├── docker-compose.full.yml      # Full stack in Docker
+-├── start-debug.sh               # Dual service startup script
+-├── services/order-service/
+-│   ├── .env                     # Local development config
+-│   ├── .env.example             # Template with placeholders
+-│   ├── Dockerfile               # Multi-stage build with OpenTelemetry
+-│   └── README.md                # Service-specific documentation
+-└── .vscode/launch.json          # Debug configurations
+-
+-```
+-
+-## 🔧 **Modified Files**
+-
+-- **`services/order-service/src/main/resources/application.yml`**: Removed hardcoded OpenTelemetry config (now using Java agent)
+-- **`services/inventory-service/.env`**: Updated with consistent format
+-- **`README.md`**: Complete rewrite with dual-mode documentation
+-
+-## 🧪 **Testing Workflow**
+-
+-### **Test Hybrid Mode**
+-```bash
+-# 1. Start infrastructure
+-docker compose up -d
+-
+-# 2. Use VS Code debug configurations OR
+-cd services/order-service && source .env && mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:./opentelemetry-javaagent.jar"
+-cd services/inventory-service && source .env && go run .
+-
+-# 3. Test end-to-end
+-curl -X POST http://localhost:8080/orders \
+-  -H "Content-Type: application/json" \
+-  -d '{"customer_id": "123e4567-e89b-12d3-a456-426614174000", "product_id": "987fcdeb-51a2-43d1-9c47-123456789abc", "quantity": 2}'
+-```
+-
+-### **Test Full Docker Mode**
+-```bash
+-docker compose -f docker-compose.full.yml up --build
+-# Same curl test as above
+-```
+-
+-## 🎊 **Benefits**
+-
+-1. **Flexible Development**: Choose between local debugging or full Docker
+-2. **Consistent Configuration**: Same environment variables across all deployment modes
+-3. **Easy Onboarding**: Copy `.env.example` → `.env` and you're ready
+-4. **Production Ready**: Environment-based config works in any deployment environment
+-5. **Better DX**: IDE integration with proper debug support
+-
+-## 🔀 **Merge Strategy**
+-
+-1. **Test this branch** thoroughly in both modes
+-2. **Verify end-to-end tracing** works in both configurations  
+-3. **Create PR** from this branch to main
+-4. **Review and merge** when satisfied
+-
+-This branch maintains backward compatibility while adding significant flexibility and developer experience improvements. 
+\ No newline at end of file
+diff --git a/README.md b/README.md
+index 8305ae2..b355a28 100644
+--- a/README.md
++++ b/README.md
+@@ -1,148 +1,513 @@
+ # Distributed Tracing Demo with OpenTelemetry
+ 
+-A complete distributed tracing demo showing **Java Order Service** → **Kafka** → **Go Inventory Service** with end-to-end tracing using OpenTelemetry and Grafana Cloud.
++🚀 **A complete tutorial for building a distributed tracing system** with **Java Order Service** → **Kafka** → **Go Inventory Service** using OpenTelemetry and Grafana Cloud.
+ 
+-## 🚀 **Two Operational Modes**
++## 📖 **What You'll Build**
+ 
+-### 🏠 **Mode 1: Hybrid Development (Recommended)**
+-- **Services**: Run locally (for debugging/development)
+-- **Infrastructure**: Run in Docker (Kafka, PostgreSQL, Zookeeper)
++- **Order Service** (Java Spring Boot) - Handles HTTP requests and publishes events
++- **Inventory Service** (Go) - Consumes Kafka events and processes inventory  
++- **Full Observability** - End-to-end tracing through HTTP → Database → Kafka → Consumer
++- **Two Deployment Modes** - Local development or full Docker setup
+ 
++## 🏗️ **Architecture Overview**
++
++```
++[HTTP Request] → [Order Service] → [PostgreSQL] → [Kafka] → [Inventory Service]
++       ↓               ↓              ↓           ↓              ↓
++    [Traces]        [Traces]       [Traces]    [Traces]      [Traces]
++       ↓               ↓              ↓           ↓              ↓
++                    [Grafana Cloud OTLP Endpoint]
++```
++
++**Tracing Flow:**
++1. HTTP request creates a trace span
++2. Database operations are automatically traced  
++3. Kafka message publishing creates linked spans
++4. Kafka consumer continues the trace context
++5. All spans are sent to Grafana Cloud for visualization
++
++---
++
++## 🚀 **Quick Start (5 Minutes)**
++
++### **Step 1: Clone and Setup**
++```bash
++git clone <repository-url>
++cd distributed-tracing-otel-demo
++```
++
++### **Step 2: Configure Environment**
++```bash
++# Copy environment templates
++cp services/order-service/.env.example services/order-service/.env
++cp services/inventory-service/.env.example services/inventory-service/.env
++```
++
++### **Step 3: Add Your Grafana Cloud Credentials**
++Edit both `.env` files and replace the placeholder values:
++
++**`services/order-service/.env`:**
++```bash
++# Database Configuration
++DATABASE_URL=jdbc:postgresql://localhost:5432/orders_db
++DATABASE_USER=postgres
++DATABASE_PASSWORD=password
++
++# Kafka Configuration  
++KAFKA_BROKER=localhost:9092
++
++# OpenTelemetry Configuration
++OTEL_SERVICE_NAME=order-service
++OTEL_TRACES_EXPORTER=otlp
++OTEL_LOGS_EXPORTER=otlp
++OTEL_METRICS_EXPORTER=none
++OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces
++OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/logs
++OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic YOUR_GRAFANA_CLOUD_AUTH_TOKEN_HERE
++OTEL_INSTRUMENTATION_SLF4J_LOGBACK_APPENDER_ENABLED=true
++OTEL_LOGS_INCLUDE_TRACE_CONTEXT=true
++```
++
++**`services/inventory-service/.env`:**
++```bash
++# Kafka Configuration
++KAFKA_BROKER=localhost:9092
++
++# Grafana Cloud Configuration
++OTEL_AUTH_HEADER=Basic YOUR_ENCODED_CREDENTIALS_HERE
++```
++
++> **Getting Grafana Cloud Credentials:**
++> 1. Sign up at [grafana.com](https://grafana.com)
++> 2. Go to "My Account" → "Cloud Portal" → "Configure"  
++> 3. Under "OpenTelemetry", copy your instance details
++> 4. Create a base64 encoded token: `echo -n "instanceId:token" | base64`
++
++### **Step 4: Choose Your Mode**
++
++**🏠 Mode 1 - Hybrid Development (Recommended)**
+ ```bash
+ # Start infrastructure only
+ docker compose up -d
+ 
+-# Run services locally (in separate terminals)
+-cd services/order-service && mvn spring-boot:run
+-cd services/inventory-service && go run .
++# Run services locally (separate terminals)
++cd services/order-service
++source .env && mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:./opentelemetry-javaagent.jar"
+ 
+-# Or use IDE debug configurations (IntelliJ/VS Code)
++cd services/inventory-service  
++source .env && go run .
+ ```
+ 
+-### 🐳 **Mode 2: Full Docker**
+-- **Everything**: Runs in Docker containers
+-
++**🐳 Mode 2 - Full Docker**
+ ```bash
+ # Start everything in Docker
+ docker compose -f docker-compose.full.yml up --build
++```
+ 
+-# Test the setup
+-curl -X POST http://localhost:8080/api/orders \
++### **Step 5: Test It!**
++```bash
++# Create an order
++curl -X POST http://localhost:8080/orders \
+   -H "Content-Type: application/json" \
+-  -d '{"productId": "123", "quantity": 2}'
++  -d '{
++    "customer_id": "123e4567-e89b-12d3-a456-426614174000",
++    "product_id": "987fcdeb-51a2-43d1-9c47-123456789abc", 
++    "quantity": 2
++  }'
++
++# Get all orders
++curl http://localhost:8080/orders
+ ```
+ 
+-## 📁 **Project Structure**
++### **Step 6: View Traces**
++1. Go to your Grafana Cloud instance
++2. Navigate to "Explore" → "Tempo"
++3. Search for traces with service name `order-service`
++4. See the complete request flow! 🎉
+ 
+-```
+-distributed-tracing-otel-demo/
+-├── docker-compose.yml           # Default: Infrastructure only
+-├── docker-compose.full.yml      # Full stack in Docker  
+-├── docker-compose.infra.yml     # Explicit infrastructure only
+-├── services/
+-│   ├── order-service/           # Java Spring Boot
+-│   │   ├── .env                 # Local development config
+-│   │   ├── .env.example         # Template
+-│   │   └── README.md            # Service-specific docs
+-│   └── inventory-service/       # Go service
+-│       ├── .env                 # Local development config
+-│       ├── .env.example         # Template
+-│       └── README.md            # Service-specific docs
+-└── .vscode/launch.json          # Debug configurations
+-```
++---
+ 
+-## ⚙️ **Configuration**
++## 🔧 **Detailed Configuration**
+ 
+-All configuration uses **environment variables**:
++### **Environment Variables Reference**
+ 
+-- **Local development**: Uses `.env` files (connects to `localhost`)
+-- **Docker deployment**: Uses container environment variables (connects to internal Docker network)
++#### **Order Service Configuration**
++| Variable | Description | Example |
++|----------|-------------|---------|
++| `DATABASE_URL` | PostgreSQL connection string | `jdbc:postgresql://localhost:5432/orders_db` |
++| `DATABASE_USER` | Database username | `postgres` |
++| `DATABASE_PASSWORD` | Database password | `password` |
++| `KAFKA_BROKER` | Kafka broker address | `localhost:9092` |
++| `OTEL_SERVICE_NAME` | Service name in traces | `order-service` |
++| `OTEL_TRACES_EXPORTER` | Trace exporter type | `otlp` |
++| `OTEL_LOGS_EXPORTER` | Log exporter type | `otlp` |
++| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Grafana traces endpoint | `https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces` |
++| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Grafana logs endpoint | `https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/logs` |
++| `OTEL_EXPORTER_OTLP_HEADERS` | Authorization header | `Authorization=Basic <encoded-token>` |
+ 
+-### Quick Setup
++#### **Inventory Service Configuration**
++| Variable | Description | Example |
++|----------|-------------|---------|
++| `KAFKA_BROKER` | Kafka broker address | `localhost:9092` |
++| `OTEL_AUTH_HEADER` | Grafana authorization | `Basic <encoded-token>` |
+ 
+-```bash
+-# Copy environment templates
+-cp services/order-service/.env.example services/order-service/.env
+-cp services/inventory-service/.env.example services/inventory-service/.env
++### **Docker Configuration Differences**
+ 
+-# Update with your Grafana Cloud credentials in both .env files
+-```
++When running in Docker mode, the services connect to internal Docker networks:
++
++- `KAFKA_BROKER=kafka:9093` (instead of `localhost:9092`)
++- `DATABASE_URL=jdbc:postgresql://postgres:5432/orders_db` (instead of `localhost:5432`)
+ 
+-## 🔍 **Tracing Flow**
++The `docker-compose.full.yml` automatically handles these differences.
+ 
+-1. **HTTP Request** → Order Service
+-2. **Database Query** → PostgreSQL  
+-3. **Kafka Message** → Published to `order-events` topic
+-4. **Kafka Consumer** → Inventory Service processes message
+-5. **All operations traced** → Grafana Cloud
++---
+ 
+-## 🛠 **Development Workflow**
++## 🛠️ **Development Modes Explained**
+ 
+-### Daily Development (Hybrid Mode)
++### **🏠 Hybrid Development Mode (Recommended)**
++
++**What runs where:**
++- **Infrastructure** (PostgreSQL, Kafka, Zookeeper): Docker containers
++- **Services** (Order & Inventory): Your local machine
++
++**Benefits:**
++- ✅ Full debugging with breakpoints
++- ✅ Instant code reloads  
++- ✅ IDE integration
++- ✅ Easy log viewing
++- ✅ Fast development cycle
++
++**Setup:**
+ ```bash
+-# 1. Start infrastructure
++# Start infrastructure
+ docker compose up -d
+ 
+-# 2. Run services in debug mode (IDE or terminal)
+-# Order Service: IntelliJ run configuration or mvn spring-boot:run
+-# Inventory Service: VS Code debug or go run .
++# Check infrastructure is running
++docker compose ps
+ 
+-# 3. Develop, debug, and test
+-curl -X POST http://localhost:8080/api/orders -H "Content-Type: application/json" -d '{"productId": "123", "quantity": 2}'
++# Run Order Service (Terminal 1)
++cd services/order-service
++source .env
++mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:./opentelemetry-javaagent.jar"
+ 
+-# 4. Stop infrastructure when done
+-docker compose down
++# Run Inventory Service (Terminal 2)  
++cd services/inventory-service
++source .env
++go run .
+ ```
+ 
+-### Integration Testing (Full Docker)
++### **🐳 Full Docker Mode**
++
++**What runs where:**
++- **Everything**: Docker containers with internal networking
++
++**Benefits:**
++- ✅ Production-like environment
++- ✅ Consistent across machines
++- ✅ Easy CI/CD integration
++- ✅ No local dependencies needed
++
++**Setup:**
+ ```bash
+-# Build and test everything together
++# Start everything
+ docker compose -f docker-compose.full.yml up --build
+ 
+-# Test and verify tracing
+-curl -X POST http://localhost:8080/api/orders -H "Content-Type: application/json" -d '{"productId": "123", "quantity": 2}'
++# View logs
++docker compose -f docker-compose.full.yml logs -f order-service
++docker compose -f docker-compose.full.yml logs -f inventory-service
+ 
+-# Check Grafana Cloud for traces
++# Stop everything
+ docker compose -f docker-compose.full.yml down
+ ```
+ 
+-## 🎯 **Available Services**
++---
++
++## 🧪 **API Reference**
++
++### **Order Service Endpoints**
++
++**Base URL:** `http://localhost:8080`
++
++#### **Create Order**
++```http
++POST /orders
++Content-Type: application/json
++
++{
++  "customer_id": "123e4567-e89b-12d3-a456-426614174000",
++  "product_id": "987fcdeb-51a2-43d1-9c47-123456789abc",
++  "quantity": 2
++}
++```
++
++**Response:**
++```json
++{
++  "order_id": "order-uuid-here",
++  "status": "created"
++}
++```
++
++#### **Get All Orders**
++```http
++GET /orders
++```
++
++**Response:**
++```json
++[
++  {
++    "id": "order-uuid",
++    "customer_id": "customer-uuid", 
++    "product_id": "product-uuid",
++    "quantity": 2,
++    "status": "created",
++    "created_at": "2024-01-01T12:00:00Z"
++  }
++]
++```
++
++### **Testing Examples**
++
++```bash
++# Create multiple orders
++for i in {1..5}; do
++  curl -X POST http://localhost:8080/orders \
++    -H "Content-Type: application/json" \
++    -d '{
++      "customer_id": "123e4567-e89b-12d3-a456-426614174000",
++      "product_id": "987fcdeb-51a2-43d1-9c47-123456789abc",
++      "quantity": '$i'
++    }'
++  echo "Created order $i"
++done
++
++# Check all orders
++curl -s http://localhost:8080/orders | jq '.'
++```
++
++---
++
++## 📊 **Infrastructure Services**
++
++### **PostgreSQL Database**
++- **Port:** `5432`
++- **Database:** `orders_db`
++- **User:** `postgres` 
++- **Password:** `password`
++- **Connection:** `postgresql://postgres:password@localhost:5432/orders_db`
++
++### **Database UI (postgres-mcp)**
++- **URL:** `http://localhost:8000`
++- **Access:** View database tables and data through web interface
++
++### **Kafka**
++- **Port:** `9092` (external), `9093` (internal Docker)
++- **Topics:** `order-events` (created automatically)
++- **Zookeeper:** `localhost:2181`
++
++### **Service Ports**
++- **Order Service:** `8080`
++- **PostgreSQL:** `5432`
++- **Kafka:** `9092`
++- **Zookeeper:** `2181`
++- **DB UI:** `8000`
++
++---
++
++## 🔍 **Understanding the Traces**
+ 
+-- **Order Service**: `http://localhost:8080` (Java Spring Boot)
+-- **Inventory Service**: Runs as Kafka consumer (Go)
+-- **PostgreSQL**: `localhost:5432` (user: `postgres`, password: `password`)
+-- **Kafka**: `localhost:9092`
+-- **Database UI**: `http://localhost:8000` (postgres-mcp)
++### **What Gets Traced**
+ 
+-## 📊 **Observability**
++1. **HTTP Requests** - Every API call to Order Service
++2. **Database Operations** - SQL queries to PostgreSQL
++3. **Kafka Publishing** - Message publishing to `order-events` topic
++4. **Kafka Consuming** - Message processing in Inventory Service
++5. **Cross-Service Context** - Trace context flows through Kafka headers
+ 
+-- **Traces**: Grafana Cloud OTLP endpoint
+-- **Logs**: Application logs with trace context
+-- **Metrics**: Basic service metrics (can be enabled)
++### **Trace Structure**
++
++```
++Root Span: POST /orders
++├── Child Span: Database INSERT
++├── Child Span: Kafka PUBLISH
++└── Child Span: Inventory Processing (different service)
++```
++
++### **Key Trace Attributes**
++
++- **Service Names:** `order-service`, `inventory-service`
++- **Operation Names:** `POST /orders`, `kafka.publish`, `kafka.consume`
++- **Custom Attributes:** `order.id`, `customer.id`, `product.id`, `quantity`
++- **Error Tracking:** Exceptions and error states are captured
++
++---
+ 
+ ## 🚨 **Troubleshooting**
+ 
+-### Services can't connect to infrastructure
++### **Environment Issues**
++
++**Problem:** Services can't connect to infrastructure
+ ```bash
+-# Make sure infrastructure is running
++# Check if infrastructure is running
+ docker compose ps
+ 
+-# Check if ports are available
++# Should show postgres, kafka, zookeeper as "Up"
++# If not, restart infrastructure
++docker compose down && docker compose up -d
++```
++
++**Problem:** Port conflicts
++```bash
++# Check what's using the ports
+ lsof -i :5432  # PostgreSQL
+-lsof -i :9092  # Kafka
++lsof -i :9092  # Kafka  
++lsof -i :8080  # Order Service
++
++# Kill conflicting processes or change ports in docker-compose.yml
++```
++
++### **Configuration Issues**
++
++**Problem:** Environment variables not loaded
++```bash
++# For Order Service (Java)
++cd services/order-service
++source .env
++echo $DATABASE_URL  # Should show the database URL
++
++# For Inventory Service (Go)
++cd services/inventory-service  
++source .env
++echo $KAFKA_BROKER  # Should show kafka broker
++```
++
++**Problem:** Grafana Cloud connection fails
++```bash
++# Check your credentials are base64 encoded correctly
++echo -n "instanceId:token" | base64
++
++# Test the connection
++curl -H "Authorization: Basic YOUR_TOKEN" \
++  https://otlp-gateway-prod-eu-west-2.grafana.net/otlp/v1/traces
++```
++
++### **Service Issues**
++
++**Problem:** Order Service won't start
++```bash
++# Check if OpenTelemetry agent exists
++ls -la services/order-service/opentelemetry-javaagent.jar
++
++# If missing, download it:
++cd services/order-service
++wget https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
++```
++
++**Problem:** Inventory Service won't start
++```bash
++# Check Go is installed
++go version
++
++# Check dependencies
++cd services/inventory-service
++go mod tidy
++go run .
++```
++
++**Problem:** Kafka connection errors
++```bash
++# Test Kafka is accessible
++docker exec distributed-tracing-otel-demo-kafka-1 kafka-topics.sh \
++  --bootstrap-server localhost:9092 --list
++
++# Should show topics, including 'order-events'
+ ```
+ 
+-### Tracing not working
+-- Verify Grafana Cloud credentials in `.env` files
+-- Check service logs for OTLP connection errors
+-- Ensure `OTEL_*` environment variables are loaded
++### **Tracing Issues**
++
++**Problem:** No traces in Grafana Cloud
++1. **Check credentials** - Verify your Grafana Cloud auth token
++2. **Check endpoints** - Ensure OTLP endpoints are correct for your region
++3. **Check network** - Services must reach `otlp-gateway-prod-eu-west-2.grafana.net`
++4. **Check service logs** - Look for OTLP export errors
++
++**Problem:** Traces are incomplete
++1. **Check all services are instrumented** - Both Java agent and Go OTEL
++2. **Check trace context propagation** - Kafka headers should contain trace info
++3. **Check sampling** - Default is 100% sampling in development
++
++### **Docker Issues**
++
++**Problem:** Build failures
++```bash
++# Clean Docker cache
++docker system prune -a --volumes
++
++# Rebuild from scratch  
++docker compose -f docker-compose.full.yml build --no-cache
++```
+ 
+-### Docker issues
++**Problem:** Container networking issues
+ ```bash
+-# Clean up everything
+-docker compose down --volumes --remove-orphans
+-docker compose -f docker-compose.full.yml down --volumes --remove-orphans
++# Check internal Docker network
++docker network ls
++docker network inspect distributed-tracing-otel-demo_default
+ 
+-# Rebuild from scratch
+-docker compose build --no-cache
++# Services should be on same network
+ ```
++
++---
++
++## 🎯 **Next Steps**
++
++### **Extend the Demo**
++1. **Add more services** - Create additional microservices with tracing
++2. **Add metrics** - Enable OpenTelemetry metrics collection
++3. **Add alerting** - Set up Grafana alerts on trace data
++4. **Add sampling** - Configure trace sampling for production loads
++
++### **Production Considerations**
++1. **Security** - Use proper authentication and TLS
++2. **Performance** - Configure appropriate sampling rates  
++3. **Monitoring** - Add health checks and monitoring
++4. **Deployment** - Use Kubernetes or similar orchestration
++
++### **Learning Resources**
++- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
++- [Grafana Cloud Documentation](https://grafana.com/docs/grafana-cloud/)
++- [Distributed Tracing Best Practices](https://opentelemetry.io/docs/best-practices/)
++
++---
++
++## 📝 **Project Structure**
++
++```
++distributed-tracing-otel-demo/
++├── docker-compose.yml              # Infrastructure only (default)
++├── docker-compose.full.yml         # Full stack in Docker
++├── README.md                       # This comprehensive guide
++├── services/
++│   ├── order-service/              # Java Spring Boot service
++│   │   ├── .env                    # Local development config  
++│   │   ├── .env.example            # Configuration template
++│   │   ├── Dockerfile              # Docker build definition
++│   │   ├── pom.xml                 # Maven dependencies
++│   │   ├── opentelemetry-javaagent.jar  # OTEL Java agent
++│   │   └── src/                    # Java source code
++│   └── inventory-service/          # Go service
++│       ├── .env                    # Local development config
++│       ├── .env.example            # Configuration template  
++│       ├── Dockerfile              # Docker build definition
++│       ├── go.mod                  # Go dependencies
++│       ├── main.go                 # Application entry point
++│       └── internal/               # Go source code
++└── .vscode/                        # VS Code debug configurations
++    └── launch.json                 # Debug settings
++```
++
++---
++
++**🎉 Congratulations!** You now have a complete distributed tracing setup. Every request flows through your system with full observability, giving you insights into performance, errors, and system behavior.
++
++**Questions?** Check the troubleshooting section above or create an issue in the repository.
+diff --git a/docker-compose.full.yml b/docker-compose.full.yml
+index d42baee..a99c400 100644
+--- a/docker-compose.full.yml
++++ b/docker-compose.full.yml
+@@ -1,8 +1,5 @@
+ version: '3.8'
+ 
+-# Full stack compose file - everything runs in Docker
+-# Run with: docker compose -f docker-compose.full.yml up --build
+-
+ services:
+   postgres:
+     image: postgres:13
+@@ -60,16 +57,10 @@ services:
+     ports:
+       - "8080:8080"
+     environment:
+-      # Database connection (Docker internal)
+       - DATABASE_URL=jdbc:postgresql://postgres:5432/orders_db
+-      - DATABASE_USER=postgres
+-      - DATABASE_PASSWORD=password
+-      # Kafka connection (Docker internal)
+       - KAFKA_BROKER=kafka:9093
+-      # Additional Spring Boot configuration for Docker
+       - SPRING_PROFILES_ACTIVE=docker
+     env_file:
+-      # Load OTEL credentials from .env file
+       - ./services/order-service/.env
+     depends_on:
+       - postgres
+@@ -82,10 +73,8 @@ services:
+       context: ./services/inventory-service
+       dockerfile: Dockerfile
+     environment:
+-      # Kafka connection (Docker internal)
+       - KAFKA_BROKER=kafka:9093
+     env_file:
+-      # Load OTEL credentials from .env file
+       - ./services/inventory-service/.env
+     depends_on:
+       - kafka
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 6291da0..8d418bf 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -1,15 +1,5 @@
+ version: '3.8'
+ 
+-# Default compose file - Infrastructure only (for local development)
+-# Services run locally, infrastructure runs in Docker
+-# 
+-# Usage:
+-#   docker compose up           - Start infrastructure only
+-#   docker compose up -d        - Start infrastructure in background
+-#   docker compose down         - Stop infrastructure
+-#
+-# For full stack: docker compose -f docker-compose.full.yml up --build
+-
+ services:
+   postgres:
+     image: postgres:13
+diff --git a/services/inventory-service/.env b/services/inventory-service/.env
+index ddb49e1..03eb32a 100644
+--- a/services/inventory-service/.env
++++ b/services/inventory-service/.env
+@@ -1,3 +1,10 @@
+-OTEL_AUTH_HEADER=Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTB4TVRrM01UWTNMVzkwYkhBdGQzSnBkR1V0YjNSc2NDMTBiMnRsYmkweUlpd2lheUk2SW1ad2FXMWplRUV3Tnpnek9URXplRFZ5YWpoMlpWa3lkeUlzSW0waU9uc2ljaUk2SW5CeWIyUXRaWFV0ZDJWemRDMHlJbjE5
+-OTEL_ENDPOINT=otlp-gateway-prod-eu-west-2.grafana.net
++# Go Inventory Service Configuration
++
++# Kafka Configuration (for local development)
+ KAFKA_BROKER=localhost:9092
++
++# OpenTelemetry Configuration
++OTEL_ENDPOINT=otlp-gateway-prod-eu-west-2.grafana.net
++OTEL_AUTH_HEADER=Basic MTE5NzE2NzpnbGNfZXlKdklqb2lNVE0zTXpVM09DSXNJbTRpT2lKemRHRmpheTF4MVRrM01UWTNMVzkwYkhBd
++GQzSnBkR1V0YjNSc2NDMTBiMnRsYmkweUlpd2lheUk2SW1ad2FXMWplRUV3Tnpnek9URXplRFZ5YWpoMlpWa3lkeUlzSW0waU9uc2ljaUk2S
++W5CeWIyUXRaWFV0ZDJWemRDMHlJbjE5
+diff --git a/services/inventory-service/.env.example b/services/inventory-service/.env.example
+index 3dc3ec5..bed6c05 100644
+--- a/services/inventory-service/.env.example
++++ b/services/inventory-service/.env.example
+@@ -1,5 +1,8 @@
+-# Kafka Configuration
++# Go Inventory Service Configuration
++
++# Kafka Configuration (for local development)
+ KAFKA_BROKER=localhost:9092
+ 
+-# Grafana Cloud Configuration (required)
++# OpenTelemetry Configuration  
++OTEL_ENDPOINT=otlp-gateway-prod-eu-west-2.grafana.net
+ OTEL_AUTH_HEADER=Basic YOUR_ENCODED_CREDENTIALS_HERE
+diff --git a/services/inventory-service/CONFIG.md b/services/inventory-service/CONFIG.md
+deleted file mode 100644
+index 909e049..0000000
+--- a/services/inventory-service/CONFIG.md
++++ /dev/null
+@@ -1,53 +0,0 @@
+-# Configuration Guide
+-
+-The inventory service uses a **simplified configuration approach** with Grafana Cloud observability - most settings are constants, with only essential deployment-specific values configurable via environment variables.
+-
+-## Constants (Hardcoded)
+-
+-Most configuration is kept as constants for consistency:
+-
+-**Service**: `inventory-service` v`0.1.0`  
+-**Kafka Topics**: `OrderCreated` → `InventoryReserved`  
+-**Consumer Group**: `inventory-service-group`  
+-**OTLP Paths**: `/v1/logs`, `/v1/traces`  
+-**Performance**: 30s timeout, 2048 queue size, 100ms batch  
+-**Grafana Endpoint**: `https://otlp-gateway-prod-eu-west-2.grafana.net`
+-
+-## Environment Variables
+-
+-Only **2 variables** for deployment differences:
+-
+-| Variable | Default | Description |
+-|----------|---------|-------------|
+-| `KAFKA_BROKER` | `localhost:9092` | Kafka broker address |
+-| `OTEL_AUTH_HEADER` | _(required)_ | Grafana Cloud auth header |
+-
+-## Deployment Examples
+-
+-### Local Development
+-```bash
+-export KAFKA_BROKER=localhost:9092
+-export OTEL_AUTH_HEADER="Basic your-encoded-credentials"
+-go run .
+-```
+-
+-### Docker Compose
+-```bash
+-export KAFKA_BROKER=kafka:9092
+-export OTEL_AUTH_HEADER="Basic your-encoded-credentials"
+-go run .
+-```
+-
+-### Production
+-```bash
+-export KAFKA_BROKER=prod-kafka.company.com:9092
+-export OTEL_AUTH_HEADER="Basic your-production-credentials"
+-go run .
+-```
+-
+-## Why This Approach?
+-
+-- **Simplicity**: Only 2 environment variables
+-- **Consistency**: Always uses Grafana Cloud for observability
+-- **Focus**: Only Kafka broker changes between environments
+-- **Blog-friendly**: Easy to understand and demonstrate 
+\ No newline at end of file
+diff --git a/services/inventory-service/internal/app/app.go b/services/inventory-service/internal/app/app.go
+index f2353d2..53ea3c6 100644
+--- a/services/inventory-service/internal/app/app.go
++++ b/services/inventory-service/internal/app/app.go
+@@ -7,14 +7,12 @@ import (
+ 	"go.uber.org/zap"
+ )
+ 
+-// Application represents the main application structure
+ type Application struct {
+ 	ctx       context.Context
+ 	cancel    context.CancelFunc
+ 	container *Container
+ }
+ 
+-// NewApplication creates and initializes a new application instance
+ func NewApplication() (*Application, error) {
+ 	ctx, cancel := context.WithCancel(context.Background())
+ 
+@@ -34,12 +32,10 @@ func NewApplication() (*Application, error) {
+ 	return app, nil
+ }
+ 
+-// Run starts the main event processing loop
+ func (app *Application) Run() error {
+ 	return app.container.ConsumerService().Start(app.ctx)
+ }
+ 
+-// Shutdown gracefully shuts down the application
+ func (app *Application) Shutdown(ctx context.Context) {
+ 	app.container.Logger().Info("Application shutdown initiated")
+ 
+diff --git a/services/inventory-service/internal/app/container.go b/services/inventory-service/internal/app/container.go
+index 033752d..4567e1a 100644
+--- a/services/inventory-service/internal/app/container.go
++++ b/services/inventory-service/internal/app/container.go
+@@ -20,7 +20,6 @@ import (
+ 	"go.uber.org/zap/zapcore"
+ )
+ 
+-// Container holds expensive-to-create singleton resources and dependencies
+ type Container struct {
+ 	config          *config.Config
+ 	logger          *zap.Logger
+@@ -30,7 +29,6 @@ type Container struct {
+ 	shutdownFuncs   []func(context.Context) error
+ }
+ 
+-// NewContainer creates and initializes all infrastructure components
+ func NewContainer(ctx context.Context) (*Container, error) {
+ 	cfg, err := config.LoadConfig()
+ 	if err != nil {
+@@ -42,7 +40,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
+ 		shutdownFuncs: make([]func(context.Context) error, 0),
+ 	}
+ 
+-	// Setup logging infrastructure
+ 	enhancedLogger, loggingSDK, err := setupOTelLogging(ctx, cfg)
+ 	if err != nil {
+ 		return nil, err
+@@ -52,7 +49,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
+ 		container.shutdownFuncs = append(container.shutdownFuncs, loggingSDK.Close)
+ 	}
+ 
+-	// Setup tracing infrastructure
+ 	tracingSDK, err := setupOTelTracing(ctx, cfg, enhancedLogger)
+ 	if err != nil {
+ 		return nil, err
+@@ -62,19 +58,16 @@ func NewContainer(ctx context.Context) (*Container, error) {
+ 		container.shutdownFuncs = append(container.shutdownFuncs, tracingSDK.Close)
+ 	}
+ 
+-	// Setup Kafka infrastructure
+ 	messageConsumer, messageProducer, err := setupKafka(cfg, tracingSDK.TracerProvider())
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	container.messageProducer = messageProducer
+ 
+-	// Add message producer shutdown
+ 	container.shutdownFuncs = append(container.shutdownFuncs, func(ctx context.Context) error {
+ 		return messageProducer.Close()
+ 	})
+ 
+-	// Create the message handler (local variable)
+ 	inventoryService := inventory.NewInventoryService(container.logger, container.tracer)
+ 	messageHandler := inventory.NewMessageHandler(
+ 		inventoryService,
+@@ -82,7 +75,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
+ 		container.logger,
+ 	)
+ 
+-	// Create the consumer service directly (using local variables)
+ 	container.consumerService = inventory.NewConsumerService(
+ 		messageConsumer,
+ 		messageHandler,
+@@ -93,7 +85,6 @@ func NewContainer(ctx context.Context) (*Container, error) {
+ }
+ 
+ func setupOTelLogging(ctx context.Context, cfg *config.Config) (*zap.Logger, *observability.LoggingSDK, error) {
+-	// Create basic logger for error reporting during setup
+ 	basicLogger, err := zap.NewProduction()
+ 	if err != nil {
+ 		return nil, nil, fmt.Errorf("failed to create basic logger: %w", err)
+@@ -104,7 +95,6 @@ func setupOTelLogging(ctx context.Context, cfg *config.Config) (*zap.Logger, *ob
+ 		basicLogger.Error("Failed to setup OpenTelemetry logging", zap.Error(err))
+ 	}
+ 
+-	// Create enhanced logger with OTel integration using the explicit provider
+ 	otelZapCore := otelzap.NewCore("inventory-service",
+ 		otelzap.WithLoggerProvider(loggingSDK.LoggerProvider()),
+ 	)
+@@ -136,7 +126,6 @@ func setupOTelTracing(ctx context.Context, cfg *config.Config, logger *zap.Logge
+ 	return tracingSDK, err
+ }
+ 
+-// setupKafkaWithTracer initializes Kafka consumer and producer with OpenTelemetry
+ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, kafka.Producer, error) {
+ 	readerConfig := kafkago.ReaderConfig{
+ 		Brokers: []string{cfg.KafkaBroker},
+@@ -175,7 +164,6 @@ func setupKafka(cfg *config.Config, tp trace.TracerProvider) (kafka.Consumer, ka
+ 	return reader, writer, nil
+ }
+ 
+-// Close gracefully shuts down all infrastructure components
+ func (c *Container) Close(ctx context.Context) error {
+ 	c.logger.Info("Shutting down infrastructure...")
+ 
+@@ -189,7 +177,6 @@ func (c *Container) Close(ctx context.Context) error {
+ 		}
+ 	}
+ 
+-	// Sync logger as final step
+ 	if c.logger != nil {
+ 		_ = c.logger.Sync()
+ 	}
+@@ -198,7 +185,6 @@ func (c *Container) Close(ctx context.Context) error {
+ 	return closeErr
+ }
+ 
+-// Getters for accessing infrastructure components
+ func (c *Container) Logger() *zap.Logger             { return c.logger }
+ func (c *Container) Tracer() trace.Tracer            { return c.tracer }
+ func (c *Container) MessageProducer() kafka.Producer { return c.messageProducer }
+diff --git a/services/inventory-service/internal/config/config.go b/services/inventory-service/internal/config/config.go
+index 74d1f17..cdf6e0a 100644
+--- a/services/inventory-service/internal/config/config.go
++++ b/services/inventory-service/internal/config/config.go
+@@ -6,13 +6,11 @@ import (
+ 	"time"
+ )
+ 
+-// Service configuration constants
+ const (
+ 	ServiceName    = "inventory-service"
+ 	ServiceVersion = "0.1.0"
+ )
+ 
+-// Kafka configuration constants
+ const (
+ 	OrderCreatedTopic = "OrderCreated"
+ 	InventoryTopic    = "InventoryReserved"
+@@ -21,7 +19,6 @@ const (
+ 	BatchSize         = 100
+ )
+ 
+-// OpenTelemetry configuration constants
+ const (
+ 	LogsPath      = "/otlp/v1/logs"   // Grafana Cloud OTLP path
+ 	TracesPath    = "/otlp/v1/traces" // Grafana Cloud OTLP path
+@@ -29,15 +26,12 @@ const (
+ 	MaxQueueSize  = 2048
+ )
+ 
+-// Config holds environment-specific configuration
+ type Config struct {
+-	// Only the things that change between environments
+ 	KafkaBroker    string
+ 	OtelEndpoint   string
+ 	OtelAuthHeader string
+ }
+ 
+-// LoadConfig loads configuration from environment variables with validation
+ func LoadConfig() (*Config, error) {
+ 	config := &Config{
+ 		KafkaBroker:    os.Getenv("KAFKA_BROKER"),
+@@ -45,7 +39,6 @@ func LoadConfig() (*Config, error) {
+ 		OtelAuthHeader: os.Getenv("OTEL_AUTH_HEADER"),
+ 	}
+ 
+-	// Validate all required configuration
+ 	if config.KafkaBroker == "" {
+ 		return nil, fmt.Errorf("KAFKA_BROKER environment variable is required")
+ 	}
+diff --git a/services/inventory-service/internal/inventory/events.go b/services/inventory-service/internal/inventory/events.go
+index a4ae6c7..0cde6f9 100644
+--- a/services/inventory-service/internal/inventory/events.go
++++ b/services/inventory-service/internal/inventory/events.go
+@@ -1,11 +1,9 @@
+ package inventory
+ 
+-// OrderCreatedEvent represents an order creation event from the order service
+ type OrderCreatedEvent struct {
+ 	OrderID string `json:"order_id"`
+ }
+ 
+-// InventoryReservedEvent represents an inventory reservation event
+ type InventoryReservedEvent struct {
+ 	OrderID string `json:"order_id"`
+ }
+diff --git a/services/inventory-service/internal/inventory/handler.go b/services/inventory-service/internal/inventory/handler.go
+index 248166b..d0f6eb5 100644
+--- a/services/inventory-service/internal/inventory/handler.go
++++ b/services/inventory-service/internal/inventory/handler.go
+@@ -12,19 +12,16 @@ import (
+ 	"go.uber.org/zap"
+ )
+ 
+-// MessageHandler defines the interface for processing incoming messages.
+ type MessageHandler interface {
+ 	HandleOrderCreated(ctx context.Context, msg kafkago.Message) error
+ }
+ 
+-// KafkaMessageHandler handles Kafka message processing for inventory events
+ type KafkaMessageHandler struct {
+ 	inventoryService *InventoryService
+ 	producer         kafka.Producer
+ 	logger           *zap.Logger
+ }
+ 
+-// NewMessageHandler creates a new MessageHandler instance with explicit dependencies
+ func NewMessageHandler(inventoryService *InventoryService, producer kafka.Producer, logger *zap.Logger) MessageHandler {
+ 	return &KafkaMessageHandler{
+ 		inventoryService: inventoryService,
+@@ -33,9 +30,7 @@ func NewMessageHandler(inventoryService *InventoryService, producer kafka.Produc
+ 	}
+ }
+ 
+-// HandleOrderCreated processes an OrderCreated message from Kafka
+ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkago.Message) error {
+-	// Extract trace context to connect spans across services
+ 	msgCtx := h.extractTraceContext(ctx, msg.Headers)
+ 
+ 	h.logger.Info("📨 Raw Kafka message received",
+@@ -44,7 +39,6 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkag
+ 		zap.Int64("offset", msg.Offset),
+ 	)
+ 
+-	// Deserialize the order event
+ 	var order OrderCreatedEvent
+ 	if err := json.Unmarshal(msg.Value, &order); err != nil {
+ 		h.logger.Error("❌ Invalid JSON in OrderCreated event",
+@@ -56,7 +50,6 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkag
+ 
+ 	h.logger.Info("✅ Received OrderCreated event processed", zap.String("order_id", order.OrderID))
+ 
+-	// Process the order through the inventory service
+ 	reservedEvent, err := h.inventoryService.ProcessOrderCreated(msgCtx, order)
+ 	if err != nil {
+ 		h.logger.Error("❌ Failed to process order", zap.Error(err), zap.String("order_id", order.OrderID))
+@@ -65,27 +58,21 @@ func (h *KafkaMessageHandler) HandleOrderCreated(ctx context.Context, msg kafkag
+ 
+ 	h.logger.Info("✅ Inventory reserved", zap.String("order_id", reservedEvent.OrderID))
+ 
+-	// Publish the inventory reserved event
+ 	return h.publishInventoryReserved(msgCtx, reservedEvent)
+ }
+ 
+-// extractTraceContext extracts OpenTelemetry trace context from Kafka message headers
+ func (h *KafkaMessageHandler) extractTraceContext(ctx context.Context, headers []kafkago.Header) context.Context {
+ 	propagator := otel.GetTextMapPropagator()
+ 	carrier := propagation.MapCarrier{}
+ 
+-	// Extract headers from Kafka message to our carrier
+ 	for _, header := range headers {
+ 		carrier[string(header.Key)] = string(header.Value)
+ 	}
+ 
+-	// Extract the context from the carrier - this will have the parent span info
+ 	return propagator.Extract(ctx, carrier)
+ }
+ 
+-// publishInventoryReserved publishes an InventoryReserved event to Kafka
+ func (h *KafkaMessageHandler) publishInventoryReserved(ctx context.Context, event *InventoryReservedEvent) error {
+-	// Serialize the response event
+ 	payload, err := json.Marshal(*event)
+ 	if err != nil {
+ 		h.logger.Error("❌ Failed to serialize InventoryReserved event",
+@@ -95,7 +82,6 @@ func (h *KafkaMessageHandler) publishInventoryReserved(ctx context.Context, even
+ 		return err
+ 	}
+ 
+-	// Create a message with context that will propagate the trace
+ 	kafkaMsg := kafkago.Message{
+ 		Value: payload,
+ 		Key:   []byte(event.OrderID),
+diff --git a/services/inventory-service/internal/inventory/inventory_service.go b/services/inventory-service/internal/inventory/inventory_service.go
+index 4ea352d..e717538 100644
+--- a/services/inventory-service/internal/inventory/inventory_service.go
++++ b/services/inventory-service/internal/inventory/inventory_service.go
+@@ -10,13 +10,11 @@ import (
+ 	"go.uber.org/zap"
+ )
+ 
+-// InventoryService handles inventory-related business logic
+ type InventoryService struct {
+ 	logger *zap.Logger
+ 	tracer trace.Tracer
+ }
+ 
+-// NewInventoryService creates a new inventory service instance with explicit dependencies
+ func NewInventoryService(logger *zap.Logger, tracer trace.Tracer) *InventoryService {
+ 	return &InventoryService{
+ 		logger: logger,
+@@ -24,13 +22,10 @@ func NewInventoryService(logger *zap.Logger, tracer trace.Tracer) *InventoryServ
+ 	}
+ }
+ 
+-// ProcessOrderCreated processes an OrderCreated event and returns an InventoryReserved event
+ func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order OrderCreatedEvent) (*InventoryReservedEvent, error) {
+-	// Create span for inventory checking
+ 	_, span := s.tracer.Start(ctx, "inventory_check")
+ 	defer span.End()
+ 
+-	// Add custom attributes to the span
+ 	span.SetAttributes(
+ 		attribute.String("order.id", order.OrderID),
+ 		attribute.String("inventory.operation", "stock_check"),
+@@ -39,24 +34,19 @@ func (s *InventoryService) ProcessOrderCreated(ctx context.Context, order OrderC
+ 
+ 	s.logger.Info("🔍 Checking inventory for order", zap.String("order_id", order.OrderID))
+ 
+-	// Simulate inventory lookup time
+ 	time.Sleep(50 * time.Millisecond)
+ 
+-	// In a real system, this would query inventory database
+ 	stockAvailable := true
+ 	reservedQuantity := 1
+ 
+-	// Add more business-specific attributes
+ 	span.SetAttributes(
+ 		attribute.Bool("inventory.available", stockAvailable),
+ 		attribute.Int("inventory.reserved_quantity", reservedQuantity),
+ 		attribute.String("inventory.status", "reserved"),
+ 	)
+ 
+-	// Mark the span as successful
+ 	span.SetStatus(codes.Ok, "Inventory successfully reserved")
+ 
+-	// Create the result event
+ 	result := &InventoryReservedEvent{
+ 		OrderID: order.OrderID,
+ 	}
+diff --git a/services/inventory-service/internal/platform/kafka/interfaces.go b/services/inventory-service/internal/platform/kafka/interfaces.go
+index 8a2fd5c..c1741dc 100644
+--- a/services/inventory-service/internal/platform/kafka/interfaces.go
++++ b/services/inventory-service/internal/platform/kafka/interfaces.go
+@@ -6,15 +6,11 @@ import (
+ 	"github.com/segmentio/kafka-go"
+ )
+ 
+-// Producer defines the interface for publishing messages to Kafka.
+-// This is a platform concern that deals with external message brokers.
+ type Producer interface {
+ 	WriteMessage(ctx context.Context, msg kafka.Message) error
+ 	Close() error
+ }
+ 
+-// Consumer defines the interface for consuming messages from Kafka.
+-// This is a platform concern that deals with external message brokers.
+ type Consumer interface {
+ 	ReadMessage(ctx context.Context) (*kafka.Message, error)
+ 	Close() error
+diff --git a/services/inventory-service/internal/platform/observability/otel.go b/services/inventory-service/internal/platform/observability/otel.go
+index 97e130c..e4f51c4 100644
+--- a/services/inventory-service/internal/platform/observability/otel.go
++++ b/services/inventory-service/internal/platform/observability/otel.go
+@@ -16,12 +16,10 @@ import (
+ 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+ )
+ 
+-// BaseSDK holds common fields for both logging and tracing SDKs
+ type BaseSDK struct {
+ 	shutdownFuncs []func(context.Context) error
+ }
+ 
+-// Close implements io.Closer
+ func (sdk *BaseSDK) Close(ctx context.Context) error {
+ 	var err error
+ 	for _, fn := range sdk.shutdownFuncs {
+@@ -31,29 +29,24 @@ func (sdk *BaseSDK) Close(ctx context.Context) error {
+ 	return err
+ }
+ 
+-// LoggingSDK holds the OpenTelemetry logging components
+ type LoggingSDK struct {
+ 	BaseSDK
+ 	loggerProvider *sdklog.LoggerProvider
+ }
+ 
+-// LoggerProvider returns the OpenTelemetry logger provider
+ func (sdk *LoggingSDK) LoggerProvider() *sdklog.LoggerProvider {
+ 	return sdk.loggerProvider
+ }
+ 
+-// TracingSDK holds the OpenTelemetry tracing components
+ type TracingSDK struct {
+ 	BaseSDK
+ 	tracerProvider *sdktrace.TracerProvider
+ }
+ 
+-// TracerProvider returns the OpenTelemetry tracer provider
+ func (sdk *TracingSDK) TracerProvider() *sdktrace.TracerProvider {
+ 	return sdk.tracerProvider
+ }
+ 
+-// createResource creates a common OpenTelemetry resource with service metadata
+ func createResource() (*resource.Resource, error) {
+ 	return resource.Merge(
+ 		resource.Default(),
+@@ -65,14 +58,12 @@ func createResource() (*resource.Resource, error) {
+ 	)
+ }
+ 
+-// otlpEndpointConfig returns common OTLP endpoint configuration
+ func otlpEndpointConfig(cfg *config.Config, path string) map[string]string {
+ 	return map[string]string{
+ 		"Authorization": cfg.OtelAuthHeader,
+ 	}
+ }
+ 
+-// handleSetupError handles errors during SDK setup
+ func handleSetupError(name string, err error, currentErr error) error {
+ 	if err != nil {
+ 		return errors.Join(currentErr, fmt.Errorf("%s: %w", name, err))
+@@ -80,18 +71,15 @@ func handleSetupError(name string, err error, currentErr error) error {
+ 	return currentErr
+ }
+ 
+-// SetupLoggingSDK initializes OpenTelemetry logging with the provided configuration
+ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, error) {
+ 	sdk := &LoggingSDK{}
+ 	var currentErr error
+ 
+-	// 1. Setup Resource (contains service metadata)
+ 	res, err := createResource()
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to create resource: %w", err)
+ 	}
+ 
+-	// 2. Setup Logger Provider using OTLP/HTTP
+ 	logExporter, errExporter := otlploghttp.New(ctx,
+ 		otlploghttp.WithEndpoint(cfg.OtelEndpoint),
+ 		otlploghttp.WithURLPath(config.LogsPath),
+@@ -99,46 +87,37 @@ func SetupLoggingSDK(ctx context.Context, cfg *config.Config) (*LoggingSDK, erro
+ 	)
+ 	currentErr = handleSetupError("OTLP Log Exporter", errExporter, currentErr)
+ 
+-	// Proceed only if exporter was created successfully
+ 	if errExporter == nil {
+-		// Configure BatchProcessor with configurable options
+ 		logProcessor := sdklog.NewBatchProcessor(logExporter,
+ 			sdklog.WithExportTimeout(config.ExportTimeout),
+ 			sdklog.WithMaxQueueSize(config.MaxQueueSize),
+ 		)
+ 
+-		// Create the LoggerProvider
+ 		sdk.loggerProvider = sdklog.NewLoggerProvider(
+ 			sdklog.WithProcessor(logProcessor),
+ 			sdklog.WithResource(res),
+ 		)
+ 
+-		// Add shutdown function
+ 		sdk.shutdownFuncs = append(sdk.shutdownFuncs, sdk.loggerProvider.Shutdown)
+ 	}
+ 
+ 	return sdk, currentErr
+ }
+ 
+-// SetupTracingSDK initializes OpenTelemetry tracing with the provided configuration
+ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (*TracingSDK, error) {
+ 	sdk := &TracingSDK{}
+ 	var currentErr error
+ 
+-	// 1. Setup Resource (contains service metadata)
+ 	res, err := createResource()
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to create resource: %w", err)
+ 	}
+ 
+-	// Set up context propagation for distributed tracing
+-	// This enables trace context to be properly propagated in Kafka headers
+ 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+ 		propagation.TraceContext{},
+ 		propagation.Baggage{},
+ 	))
+ 
+-	// 2. Setup Trace Provider using OTLP/HTTP
+ 	traceExporter, errExporter := otlptracehttp.New(ctx,
+ 		otlptracehttp.WithEndpoint(cfg.OtelEndpoint),
+ 		otlptracehttp.WithURLPath(config.TracesPath),
+@@ -146,25 +125,20 @@ func SetupTracingSDK(ctx context.Context, cfg *config.Config) (*TracingSDK, erro
+ 	)
+ 	currentErr = handleSetupError("OTLP Trace Exporter", errExporter, currentErr)
+ 
+-	// Proceed only if exporter was created successfully
+ 	if errExporter == nil {
+-		// Configure BatchProcessor
+ 		traceProcessor := sdktrace.NewBatchSpanProcessor(traceExporter,
+ 			sdktrace.WithExportTimeout(config.ExportTimeout),
+ 			sdktrace.WithMaxQueueSize(config.MaxQueueSize),
+ 		)
+ 
+-		// Create the TracerProvider
+ 		sdk.tracerProvider = sdktrace.NewTracerProvider(
+ 			sdktrace.WithSampler(sdktrace.AlwaysSample()),
+ 			sdktrace.WithResource(res),
+ 			sdktrace.WithSpanProcessor(traceProcessor),
+ 		)
+ 
+-		// Set the global tracer provider
+ 		otel.SetTracerProvider(sdk.tracerProvider)
+ 
+-		// Add shutdown function
+ 		sdk.shutdownFuncs = append(sdk.shutdownFuncs, sdk.tracerProvider.Shutdown)
+ 	}
+ 
+diff --git a/services/order-service/.env b/services/order-service/.env
+index 5241d44..a7a1f7b 100644
+--- a/services/order-service/.env
++++ b/services/order-service/.env
+@@ -1,11 +1,11 @@
+-# Database Configuration
+-DB_HOST=localhost
+-DB_PORT=5432
+-DB_NAME=orders_db
+-DB_USERNAME=orders_user
+-DB_PASSWORD=orders_password
++# Java Order Service Configuration
+ 
+-# Kafka Configuration
++# Database Configuration (for local development)
++DATABASE_URL=jdbc:postgresql://localhost:5432/orders_db
++DATABASE_USER=postgres
++DATABASE_PASSWORD=password
++
++# Kafka Configuration (for local development)  
+ KAFKA_BROKER=localhost:9092
+ 
+ # OpenTelemetry Configuration
+diff --git a/services/order-service/.env.example b/services/order-service/.env.example
+index d246de0..4646a9a 100644
+--- a/services/order-service/.env.example
++++ b/services/order-service/.env.example
+@@ -1,14 +1,14 @@
+ # Java Order Service Configuration
+ 
+-# Database Configuration
++# Database Configuration (for local development)
+ DATABASE_URL=jdbc:postgresql://localhost:5432/orders_db
+ DATABASE_USER=postgres
+ DATABASE_PASSWORD=password
+ 
+-# Kafka Configuration
++# Kafka Configuration (for local development)
+ KAFKA_BROKER=localhost:9092
+ 
+-# OpenTelemetry Java Agent Configuration
++# OpenTelemetry Configuration
+ OTEL_SERVICE_NAME=order-service
+ OTEL_TRACES_EXPORTER=otlp
+ OTEL_LOGS_EXPORTER=otlp
+diff --git a/services/order-service/README.md b/services/order-service/README.md
+deleted file mode 100644
+index 84258dc..0000000
+--- a/services/order-service/README.md
++++ /dev/null
+@@ -1,58 +0,0 @@
+-# Order Service
+-
+-Java Spring Boot service that handles order creation and publishes events to Kafka with OpenTelemetry tracing.
+-
+-## Configuration
+-
+-All configuration is done via environment variables. Copy `.env.example` to `.env` and update with your values:
+-
+-```bash
+-cp .env.example .env
+-```
+-
+-### Environment Variables
+-
+-- **Database**: `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`
+-- **Kafka**: `KAFKA_BROKER`
+-- **OpenTelemetry**: All `OTEL_*` variables for tracing and logging
+-
+-## Running Locally
+-
+-### Option 1: IntelliJ IDEA
+-1. Import the project
+-2. Use the pre-configured "OrderServiceApplication" run configuration
+-3. It automatically loads the `.env` file and sets up the OpenTelemetry Java agent
+-
+-### Option 2: VS Code
+-1. Open the workspace root
+-2. Use the "Launch Order Service (Java)" debug configuration
+-3. It loads environment variables from `.env` file
+-
+-### Option 3: Command Line
+-```bash
+-# Make sure you have the OpenTelemetry Java agent
+-# Set environment variables from .env file
+-source .env
+-mvn spring-boot:run -Dspring-boot.run.jvmArguments="-javaagent:./opentelemetry-javaagent.jar"
+-```
+-
+-### Option 4: Docker
+-```bash
+-# From project root
+-docker-compose up --build order-service
+-```
+-
+-## API Endpoints
+-
+-- `POST /api/orders` - Create a new order
+-- `GET /api/orders/{id}` - Get order by ID
+-
+-## Dependencies
+-
+-- PostgreSQL database
+-- Kafka broker
+-- OpenTelemetry Java agent (`opentelemetry-javaagent.jar`)
+-
+-## Tracing
+-
+-The service automatically sends traces to Grafana Cloud when properly configured. All HTTP requests, database queries, and Kafka messages are traced. 
+\ No newline at end of file
+diff --git a/services/order-service/src/main/java/com/vkontech/orderservice/service/OrderService.java b/services/order-service/src/main/java/com/vkontech/orderservice/service/OrderService.java
+index 84689e2..a29ecdd 100644
+--- a/services/order-service/src/main/java/com/vkontech/orderservice/service/OrderService.java
++++ b/services/order-service/src/main/java/com/vkontech/orderservice/service/OrderService.java
+@@ -39,9 +39,8 @@ public class OrderService {
+         UUID orderId = UUID.randomUUID();
+         String status = "CREATED";
+ 
+-        Span span = tracer.spanBuilder("create_order").startSpan();
++                Span span = tracer.spanBuilder("create_order").startSpan();
+         try (Scope ignored = span.makeCurrent()) {
+-            // Add demo-friendly attributes for better tracing visibility
+             span.setAttribute("order.id", orderId.toString());
+             span.setAttribute("customer.id", createOrderRequest.getCustomerId().toString());
+             span.setAttribute("product.id", createOrderRequest.getProductId().toString());
+diff --git a/services/order-service/src/main/resources/application-docker.yml b/services/order-service/src/main/resources/application-docker.yml
+index f5af12b..99c23c9 100644
+--- a/services/order-service/src/main/resources/application-docker.yml
++++ b/services/order-service/src/main/resources/application-docker.yml
+@@ -10,7 +10,6 @@ spring:
+     producer:
+       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+ 
+-# Logging configuration
+ logging:
+   level:
+     com.vkontech.orderservice: INFO
+diff --git a/services/order-service/src/main/resources/application.yml b/services/order-service/src/main/resources/application.yml
+index 9e9cfd7..4928c14 100644
+--- a/services/order-service/src/main/resources/application.yml
++++ b/services/order-service/src/main/resources/application.yml
+@@ -16,9 +16,8 @@ spring:
+   kafka:
+     bootstrap-servers: ${KAFKA_BROKER:localhost:9092}
+     producer:
+-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
++            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+ 
+-# Service metadata for tracing (constants like Go service)
+ otel:
+   service:
+     name: order-service
+diff --git a/services/order-service/src/main/resources/schema.sql b/services/order-service/src/main/resources/schema.sql
+index 5d773fc..fbca3dc 100644
+--- a/services/order-service/src/main/resources/schema.sql
++++ b/services/order-service/src/main/resources/schema.sql
+@@ -1,6 +1,3 @@
+--- Create Orders table
+--- This script runs automatically on Spring Boot startup
+-
+ CREATE TABLE IF NOT EXISTS orders (
+     id UUID PRIMARY KEY,
+     customer_id UUID NOT NULL,

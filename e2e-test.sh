@@ -58,6 +58,11 @@ echo "Waiting additional 10 seconds for all services to stabilize..."
 sleep 10
 echo -e "${GREEN}✅ All services are ready${NC}"
 
+# DEBUG: Print inventory-service environment variables
+echo -e "${BLUE}🔍 DEBUG: Printing environment variables from inventory-service...${NC}"
+docker compose -f $COMPOSE_FILE exec inventory-service env
+echo -e "${BLUE}==============================================================${NC}"
+
 # Step 5: Verify clean inventory service startup (no test spans)
 echo -e "${YELLOW}🧪 Step 5: Verifying clean inventory service startup...${NC}"
 INVENTORY_STARTUP=$(docker compose -f $COMPOSE_FILE logs inventory-service 2>/dev/null)
@@ -109,7 +114,7 @@ INVENTORY_LOGS=$(docker compose -f $COMPOSE_FILE logs inventory-service 2>/dev/n
 echo -e "${YELLOW}🔍 Step 8: Validating order service flow...${NC}"
 
 # Check order creation
-if ! echo "$ORDER_LOGS" | grep -q "Creating new order with ID: $ORDER_ID"; then
+if ! echo "$ORDER_LOGS" | grep -q "=== DEMO: Generated order ID: $ORDER_ID ==="; then
     echo -e "${RED}❌ Order creation log not found for order $ORDER_ID${NC}"
     echo "Order service logs:"
     echo "$ORDER_LOGS"
@@ -117,7 +122,7 @@ if ! echo "$ORDER_LOGS" | grep -q "Creating new order with ID: $ORDER_ID"; then
 fi
 
 # Check OrderCreated event publication
-if ! echo "$ORDER_LOGS" | grep -q "Published OrderCreated event"; then
+if ! echo "$ORDER_LOGS" | grep -q "=== DEMO: Publishing OrderCreated event to Kafka ==="; then
     echo -e "${RED}❌ OrderCreated event publication log not found${NC}"
     echo "Order service logs:"
     echo "$ORDER_LOGS"
@@ -125,14 +130,14 @@ if ! echo "$ORDER_LOGS" | grep -q "Published OrderCreated event"; then
 fi
 
 # Check order status update to INVENTORY_RESERVED
-if ! echo "$ORDER_LOGS" | grep -q "Marking order $ORDER_ID as INVENTORY_RESERVED"; then
+if ! echo "$ORDER_LOGS" | grep -q "=== DEMO: Marking order $ORDER_ID as INVENTORY_RESERVED ==="; then
     echo -e "${RED}❌ Order status update log not found for order $ORDER_ID${NC}"
     echo "Order service logs:"
     echo "$ORDER_LOGS"
     exit 1
 fi
 
-if ! echo "$ORDER_LOGS" | grep -q "Order $ORDER_ID updated to INVENTORY_RESERVED"; then
+if ! echo "$ORDER_LOGS" | grep -q "=== DEMO: Order $ORDER_ID successfully updated to INVENTORY_RESERVED ==="; then
     echo -e "${RED}❌ Order status confirmation log not found for order $ORDER_ID${NC}"
     echo "Order service logs:"
     echo "$ORDER_LOGS"
