@@ -1,6 +1,70 @@
-# Distributed Tracing Demo with OpenTelemetry
+# Distributed Tracing Demo with OpenTelemetry and Grafana Cloud
 
-🚀 **A complete tutorial for building a distributed tracing system** with **Java Order Service** → **Kafka** → **Go Inventory Service** using OpenTelemetry and Grafana Cloud.
+A comprehensive demo showcasing **end-to-end distributed tracing** between an **Order Service** and **Inventory Service** using OpenTelemetry and Grafana Cloud.
+
+## 🚀 Quick Start (3 Simple Steps)
+
+### **Step 1: Download OpenTelemetry Java Agent**
+
+Download the OpenTelemetry Java agent and place it in the Java project:
+
+```bash
+# Download the agent
+curl -L -o services/order-service/opentelemetry-javaagent.jar \
+  https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+```
+
+### **Step 2: Configure Grafana Cloud Credentials**
+
+1. **Get your Grafana Cloud API key:**
+   - Sign up at [grafana.com](https://grafana.com)
+   - Create a new stack
+   - Go to 'Access Policies' → 'API Keys'
+   - Create a new API key with 'MetricsPublisher' and 'LogsPublisher' roles
+
+2. **Update environment files:**
+   ```bash
+   # Copy template files
+   cp services/order-service/.env.example services/order-service/.env
+   cp services/inventory-service/.env.example services/inventory-service/.env
+   ```
+
+3. **Add your credentials to both .env files:**
+   - Replace `YOUR_ENCODED_CREDENTIALS_HERE` with your actual Grafana credentials
+   - Format: `Basic <your-base64-encoded-credentials>`
+
+### **Step 3: Run the Demo**
+
+```bash
+# Start all services
+docker compose -f docker-compose.full.yml up -d --build
+```
+
+### **Step 4: Test It!**
+
+Create a test order:
+
+```bash
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "550e8400-e29b-41d4-a716-446655440000",
+    "product_id": "550e8400-e29b-41d4-a716-446655440001", 
+    "quantity": 2
+  }'
+```
+
+### **Step 5: View Traces in Grafana Cloud**
+
+1. Go to your Grafana Cloud instance
+2. Navigate to "Explore" → "Tempo"
+3. Search for traces by service name: `order-service` or `inventory-service`
+4. You should see the distributed trace flow!
+
+**Expected Result:**
+![Grafana Cloud Trace View](docs/grafana-trace-example.png)
+
+---
 
 ## 📖 **What You'll Build**
 
