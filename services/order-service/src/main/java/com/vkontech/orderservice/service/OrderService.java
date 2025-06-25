@@ -39,7 +39,7 @@ public class OrderService {
         UUID orderId = UUID.randomUUID();
         String status = "CREATED";
 
-                Span span = tracer.spanBuilder("create_order").startSpan();
+        Span span = tracer.spanBuilder("create_order").startSpan();
         try (Scope ignored = span.makeCurrent()) {
             span.setAttribute("order.id", orderId.toString());
             span.setAttribute("customer.id", createOrderRequest.getCustomerId().toString());
