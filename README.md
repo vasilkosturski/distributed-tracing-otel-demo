@@ -31,7 +31,7 @@ Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Ja
 *_(Add your screenshot here)_*
 ![Grafana Cloud Trace Example](docs/grafana-trace-example.png)
 
-## 🚀 Quick Start (3 Simple Steps)
+## 🚀 Quick Start
 
 ### **Step 1: Download OpenTelemetry Java Agent**
 
