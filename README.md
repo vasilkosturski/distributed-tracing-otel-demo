@@ -11,10 +11,6 @@ This project demonstrates end-to-end distributed tracing in a microservices arch
 - Learn how to combine OpenTelemetry auto-instrumentation with manual instrumentation via the SDK for full control and visibility
 - See how logs are correlated with trace IDs, enabling you to view all logs for a trace or a specific span in context
 
-**Example distributed trace in Grafana Cloud:**  
-*_(Add your screenshot here)_*
-![Grafana Cloud Trace Example](docs/grafana-trace-example.png)
-
 **System Workflow:**
 
 ![Workflow](docs/workflow-diagram.png)
@@ -30,6 +26,10 @@ Below is a brief description of each step in the workflow:
 5. The Order Service updates the order status based on the inventory event.
 
 Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
+
+**Example distributed trace in Grafana Cloud:**  
+*_(Add your screenshot here)_*
+![Grafana Cloud Trace Example](docs/grafana-trace-example.png)
 
 ## 🚀 Quick Start (3 Simple Steps)
 
@@ -208,10 +208,6 @@ curl -X POST http://localhost:8080/orders \
 
 - `docker-compose.yml` - Basic services (PostgreSQL, Kafka, Zookeeper)
 - `docker-compose.full.yml` - Complete setup with all services
-
-
-
-
 
 ## 📚 Resources
 
