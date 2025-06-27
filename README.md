@@ -78,22 +78,21 @@ curl -X POST http://localhost:8080/orders \
 
 ---
 
-## 🏗️ Architecture
+## 🔄 Workflow Diagram
 
-> **TODO:** Create and include a proper architecture diagram for this section.
+![Workflow](docs/workflow-diagram.png)
 
-```
-┌──────────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
-│   Order Service      │───▶│      Kafka       │───▶│ Inventory Service     │
-│   (Java/Spring Boot) │    │   (Message Bus)  │    │   (Go, Kafka only)    │
-└──────────────────────┘    └──────────────────┘    └──────────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   PostgreSQL    │    │   OpenTelemetry  │    │   Grafana Cloud │
-│   (Database)    │    │   (Tracing)      │    │   (Visualization)│
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
+*This diagram shows the end-to-end workflow of requests, events, and traces in the system.*
+
+Below is a brief description of each step in the workflow:
+
+1. The API client sends a request to the Order Service.  
+2. The Order Service stores the order and publishes an event to Kafka.  
+3. The Inventory Service receives the event and processes inventory.  
+4. The Inventory Service publishes an inventory reserved event to Kafka.  
+5. The Order Service updates the order status based on the inventory event.
+
+Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
 
 ## 📋 Features
 
