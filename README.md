@@ -8,6 +8,8 @@ This project demonstrates end-to-end distributed tracing in a microservices arch
 - Understand distributed tracing across multiple services and technologies
 - See how trace context is propagated through HTTP and Kafka
 - Visualize complete request flows and performance bottlenecks in Grafana Cloud
+- Learn how to combine OpenTelemetry auto-instrumentation with manual instrumentation via the SDK for full control and visibility
+- See how logs are correlated with trace IDs, enabling you to view all logs for a trace or a specific span in context
 
 **Example distributed trace in Grafana Cloud:**  
 *_(Add your screenshot here)_*
