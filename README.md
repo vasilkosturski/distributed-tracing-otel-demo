@@ -1,13 +1,33 @@
 # Distributed Tracing Demo with OpenTelemetry and Grafana Cloud
 
-A comprehensive demo showcasing **end-to-end distributed tracing** in a microservices architecture using OpenTelemetry and Grafana Cloud.
+## 📝 Introduction
 
-## 🎯 What You'll See
+This project demonstrates end-to-end distributed tracing in a microservices architecture using OpenTelemetry and Grafana Cloud. You'll see how requests flow through a Java-based Order Service and a Go-based Inventory Service, with asynchronous communication via Kafka and data persistence in PostgreSQL. All observability data is collected and visualized in Grafana Cloud, providing deep insight into system behavior.
 
-**Distributed Trace Flow in Grafana Cloud:**
-![Grafana Cloud Trace View](docs/grafana-trace-example.png)
+**What you'll achieve:**
+- Understand distributed tracing across multiple services and technologies
+- See how trace context is propagated through HTTP and Kafka
+- Visualize complete request flows and performance bottlenecks in Grafana Cloud
 
-*This shows the complete request flow across microservices connected via Kafka with full observability.*
+**Example distributed trace in Grafana Cloud:**  
+*_(Add your screenshot here)_*
+![Grafana Cloud Trace Example](docs/grafana-trace-example.png)
+
+**System Workflow:**
+
+![Workflow](docs/workflow-diagram.png)
+
+*This diagram shows the end-to-end workflow of requests, events, and traces in the system.*
+
+Below is a brief description of each step in the workflow:
+
+1. The API client sends a request to the Order Service.  
+2. The Order Service stores the order and publishes an event to Kafka.  
+3. The Inventory Service receives the event and processes inventory.  
+4. The Inventory Service publishes an inventory reserved event to Kafka.  
+5. The Order Service updates the order status based on the inventory event.
+
+Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
 
 ## 🚀 Quick Start (3 Simple Steps)
 
@@ -75,33 +95,6 @@ curl -X POST http://localhost:8080/orders \
 2. Navigate to "Explore" → "Tempo"
 3. Search for traces by service name: `order-service` or `inventory-service`
 4. You should see the distributed trace flow!
-
----
-
-## 🔄 Workflow Diagram
-
-![Workflow](docs/workflow-diagram.png)
-
-*This diagram shows the end-to-end workflow of requests, events, and traces in the system.*
-
-Below is a brief description of each step in the workflow:
-
-1. The API client sends a request to the Order Service.  
-2. The Order Service stores the order and publishes an event to Kafka.  
-3. The Inventory Service receives the event and processes inventory.  
-4. The Inventory Service publishes an inventory reserved event to Kafka.  
-5. The Order Service updates the order status based on the inventory event.
-
-Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
-
-## 📋 Features
-
-1. **Distributed Tracing**: End-to-end request tracking across Order Service and Inventory Service
-2. **Message Queue**: Asynchronous communication via Apache Kafka
-3. **Database Persistence**: PostgreSQL for data storage
-4. **Observability**: OpenTelemetry integration with Grafana Cloud
-5. **Containerized**: Docker Compose for easy deployment
-6. **E2E Testing**: Automated test suite for validation
 
 ## 🛠️ Technology Stack
 
@@ -209,20 +202,7 @@ curl -X POST http://localhost:8080/orders \
 ./e2e-test.sh
 ```
 
-## 📊 Observability
-
-### **Grafana Cloud Dashboard**
-1. Go to your Grafana Cloud instance
-2. Navigate to "Explore" → "Tempo"
-3. Search for traces by service name or trace ID
-4. View the distributed trace flow
-
-### **Database Management**
-- **PostgreSQL MCP UI**: http://localhost:8000
-- **Direct Connection**: localhost:5432
-
-
-### **Docker Compose Files**
+## **Docker Compose Files**
 
 - `docker-compose.yml` - Basic services (PostgreSQL, Kafka, Zookeeper)
 - `docker-compose.full.yml` - Complete setup with all services
