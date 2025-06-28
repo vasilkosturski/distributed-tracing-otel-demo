@@ -7,7 +7,7 @@ This project demonstrates end-to-end distributed tracing in a microservices arch
 **What you'll achieve:**
 - Understand distributed tracing across multiple services and technologies
 - See how trace context is propagated through HTTP and Kafka
-- Visualize complete request flows and performance bottlenecks in Grafana Cloud
+- Visualize complete request flows in Grafana Cloud
 - Learn how to combine OpenTelemetry auto-instrumentation with manual instrumentation via the SDK for full control and visibility
 - See how logs are correlated with trace IDs, enabling you to view all logs for a trace or a specific span in context
 
@@ -50,6 +50,8 @@ curl -L -o services/order-service/opentelemetry-javaagent.jar \
 ### **Step 2: Configure Grafana Cloud Credentials**
 
 > **TODO:** Review and set proper Grafana Cloud URLs and instructions below before publishing!
+
+For detailed setup instructions and advanced configuration options, see the [Grafana Cloud OTLP documentation](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#manual-opentelemetry-setup-for-advanced-users).
 
 1. **Get your Grafana Cloud API key:**
    - Sign up at [grafana.com](https://grafana.com)
@@ -105,6 +107,7 @@ curl -X POST http://localhost:8080/orders \
 - **Message Queue**: Apache Kafka with Zookeeper
 - **Database**: PostgreSQL 13
 - **Observability**: OpenTelemetry + Grafana Cloud
+  - **Note**: This demo currently exports only traces and logs via OpenTelemetry. Metrics are not exported.
 - **Containerization**: Docker & Docker Compose
 
 ## 🔍 **Services Overview**
@@ -116,20 +119,15 @@ curl -X POST http://localhost:8080/orders \
   - **Manual spans** for business logic and custom operations
 - **Communication**: Publishes order events to Kafka topics
 
-### **Inventory Service (Go, Kafka only)**
+### **Inventory Service (Go)**
 - **Purpose**: Consumes Kafka events and processes inventory updates
 - **Instrumentation**: OpenTelemetry Go SDK with manual instrumentation
 - **Communication**: Subscribes to Kafka topics for order events
 - **Note**: This service does not expose an HTTP API; it is a pure Kafka consumer/producer.
 
-### **How They Communicate**
-1. **Order Service** receives HTTP request → processes order → saves to database → publishes event to Kafka
-2. **Inventory Service** consumes Kafka event → updates inventory → saves to database
-3. **Full trace context** flows through Kafka headers, maintaining end-to-end visibility
-
 ## 🎯 **Instrumentation Strategy**
 
-### **Auto-instrumentation (Java Agent)**
+### **Auto-instrumentation (Java OTEL Agent)**
 The OpenTelemetry Java Agent automatically traces:
 - HTTP requests/responses (Spring Boot endpoints)
 - Database operations (JDBC queries)
@@ -150,12 +148,12 @@ Custom spans for business logic:
 @PostMapping("/orders")
 public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
     
-    // Manual: Business logic span
-    Span businessSpan = tracer.spanBuilder("process-order")
+    // Manual: Order creation span
+    Span createOrderSpan = tracer.spanBuilder("create_order")
         .setAttribute("customer.id", request.getCustomerId())
         .startSpan();
     
-    try (var scope = businessSpan.makeCurrent()) {
+    try (var scope = createOrderSpan.makeCurrent()) {
         // Auto: Database span created by Java agent
         Order order = orderService.createOrder(request);
         
@@ -173,7 +171,7 @@ public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
         
         return ResponseEntity.ok(order);
     } finally {
-        businessSpan.end();
+        createOrderSpan.end();
     }
 }
 ```
@@ -200,14 +198,17 @@ curl -X POST http://localhost:8080/orders \
 ```
 
 ### **E2E Test**
+This automated test script validates the complete end-to-end flow by creating an order and verifying that all services work together correctly, including the distributed tracing across the entire system.
 ```bash
 ./e2e-test.sh
 ```
 
 ## **Docker Compose Files**
 
-- `docker-compose.yml` - Basic services (PostgreSQL, Kafka, Zookeeper)
-- `docker-compose.full.yml` - Complete setup with all services
+The project provides two Docker Compose configurations for different use cases:
+
+- `docker-compose.yml` - Basic services (PostgreSQL, Kafka, Zookeeper) for development and testing without the application services
+- `docker-compose.full.yml` - Complete setup with all services including the Order Service and Inventory Service, ready for the full distributed tracing demo
 
 ## 📚 Resources
 
