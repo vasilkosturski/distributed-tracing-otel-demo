@@ -28,8 +28,7 @@ Below is a brief description of each step in the workflow:
 Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
 
 **Example distributed trace in Grafana Cloud:**  
-*_(Add your screenshot here)_*
-![Grafana Cloud Trace Example](docs/grafana-trace-example.png)
+![Grafana Cloud Trace Example](docs/grafana-trace-2.png)
 
 ## 🚀 Quick Start
 
@@ -49,26 +48,77 @@ curl -L -o services/order-service/opentelemetry-javaagent.jar \
 
 ### **Step 2: Configure Grafana Cloud Credentials**
 
-> **TODO:** Review and set proper Grafana Cloud URLs and instructions below before publishing!
-
 For detailed setup instructions and advanced configuration options, see the [Grafana Cloud OTLP documentation](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#manual-opentelemetry-setup-for-advanced-users).
 
-1. **Get your Grafana Cloud API key:**
-   - Sign up at [grafana.com](https://grafana.com)
-   - Create a new stack
-   - Go to 'Access Policies' → 'API Keys'
-   - Create a new API key
+1. **Create account in Grafana Cloud**
+   - Go to [grafana.com](https://grafana.com) and sign up for a free account
+   - Complete the registration process
 
-2. **Update environment files:**
+2. **Create a new Stack**
+   ![Create Stack](docs/grafana-1.png)
+   - After logging in, click "Create a stack" or "Add stack"
+   - Choose a stack name (e.g., "distributed-tracing-demo")
+   - Select your region and click "Create stack"
+
+3. **Access OpenTelemetry Configuration**
+   ![OpenTelemetry Configuration](docs/grafana-2.png)
+   - In your stack dashboard, find the "OpenTelemetry" tile
+   - Click on it to access the OpenTelemetry configuration
+
+4. **Generate API Token**
+   ![Generate API Token](docs/grafana-3.png)
+   - Click "Generate a new API token" to create authentication credentials
+   - This token will be used to authenticate your services with Grafana Cloud
+
+5. **Create and Name the Token**
+   ![Create Token](docs/grafana-4.png)
+   - Give your token a descriptive name (e.g., "distributed-tracing-demo")
+   - Click "Create token" to generate the credentials
+
+6. **Save Your Credentials**
+   ![Token Created](docs/grafana-5.png)
+   - You'll see the created token and other environment variables
+   - **Important**: Save these credentials securely - you'll need them to configure your project
+   - The page will show the OTLP endpoint URL and authentication token
+
+7. **Create Environment Files**
+   
+   **Important**: The `.env` files are not under source control for security reasons. You need to create them from the example files.
+   
    ```bash
-   # Copy template files
+   # Copy example files to create your .env files
    cp services/order-service/.env.example services/order-service/.env
    cp services/inventory-service/.env.example services/inventory-service/.env
    ```
 
-3. **Add your credentials to both .env files:**
-   - Replace `YOUR_ENCODED_CREDENTIALS_HERE` with your actual Grafana credentials
-   - Format: `Basic <your-base64-encoded-credentials>`
+8. **Update Environment Variables**
+   
+   Use the credentials you saved from Grafana Cloud to populate both `.env` files. The example files contain realistic but invalid configurations that you need to replace with your actual credentials:
+   
+   **For Order Service** (`services/order-service/.env`):
+   ```bash
+   # Grafana Cloud OTLP endpoint (replace with your actual endpoint from step 6)
+   OTEL_EXPORTER_OTLP_ENDPOINT=https://your-instance.grafana.net:443
+   
+   # Grafana Cloud authentication header (replace with your actual token from step 6)
+   OTEL_EXPORTER_OTLP_HEADERS=authorization=Basic YOUR_ACTUAL_BASE64_ENCODED_CREDENTIALS
+   
+   # Service identification
+   OTEL_SERVICE_NAME=order-service
+   OTEL_RESOURCE_ATTRIBUTES=service.version=0.1.0,deployment.environment=demo
+   ```
+   
+   **For Inventory Service** (`services/inventory-service/.env`):
+   ```bash
+   # Grafana Cloud OTLP endpoint (same as order-service)
+   OTEL_ENDPOINT=https://your-instance.grafana.net:443
+   
+   # Grafana Cloud authentication header (same as order-service)
+   OTEL_AUTH_HEADER=Basic YOUR_ACTUAL_BASE64_ENCODED_CREDENTIALS
+   
+   # Kafka configuration (already set in docker-compose)
+   KAFKA_BROKER=kafka:9093
+   ```
 
 ### **Step 3: Run the Demo**
 
@@ -93,12 +143,18 @@ curl -X POST http://localhost:8080/orders \
 
 ### **Step 5: View Traces in Grafana Cloud**
 
-> **TODO:** Review and update the instructions below with the exact path or navigation steps for your Grafana Cloud instance, including any direct URLs if possible.
+1. Go to your Grafana Cloud instance.
+2. Navigate to the Traces section:
+   
+   ![Locate the Traces section in Grafana Cloud](docs/grafana-trace-1.png)
 
-1. Go to your Grafana Cloud instance
-2. Navigate to "Explore" → "Tempo"
-3. Search for traces by service name: `order-service` or `inventory-service`
-4. You should see the distributed trace flow!
+3. Click on a trace to view its details:
+   
+   ![View a single distributed trace](docs/grafana-trace-2.png)
+
+4. Click on a specific span within the trace to see the correlated logs:
+   
+   ![See logs for a specific span in the trace](docs/grafana-trace-3.png)
 
 ## 🛠️ Technology Stack
 
