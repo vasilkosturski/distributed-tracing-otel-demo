@@ -120,6 +120,9 @@ For detailed setup instructions and advanced configuration options, see the [Gra
    KAFKA_BROKER=kafka:9093
    ```
 
+> **Note:**
+> In this demo, both services export tracing and logging data *directly* to the Grafana Cloud OTLP endpoint. In a typical production setup, you would send telemetry to a local OpenTelemetry Collector, which then forwards data to Grafana Cloud. Direct export is used here for simplicity and ease of demonstration.
+
 ### **Step 3: Run the Demo**
 
 ```bash
@@ -231,45 +234,3 @@ public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
     }
 }
 ```
-
-This combination provides complete visibility into both technical operations and business logic.
-
-## 🧪 Testing
-
-### **API Endpoints**
-
-**Order Service** (http://localhost:8080):
-- `GET /orders` - List all orders
-- `POST /orders` - Create a new order
-
-**Example order creation:**
-```bash
-curl -X POST http://localhost:8080/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": "550e8400-e29b-41d4-a716-446655440000",
-    "product_id": "550e8400-e29b-41d4-a716-446655440001", 
-    "quantity": 2
-  }'
-```
-
-### **E2E Test**
-This automated test script validates the complete end-to-end flow by creating an order and verifying that all services work together correctly, including the distributed tracing across the entire system.
-```bash
-./e2e-test.sh
-```
-
-## **Docker Compose Files**
-
-The project provides two Docker Compose configurations for different use cases:
-
-- `docker-compose.yml` - Basic services (PostgreSQL, Kafka, Zookeeper) for development and testing without the application services
-- `docker-compose.full.yml` - Complete setup with all services including the Order Service and Inventory Service, ready for the full distributed tracing demo
-
-## 📚 Resources
-
-- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
-- [Grafana Cloud Documentation](https://grafana.com/docs/grafana-cloud/)
-- [Spring Boot Documentation](https://spring.io/projects/spring-boot)
-- [Go Documentation](https://golang.org/doc/)
-- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
