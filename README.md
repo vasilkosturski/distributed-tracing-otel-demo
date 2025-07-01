@@ -34,8 +34,6 @@ Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Ja
 
 ### **Step 1: Download OpenTelemetry Java Agent**
 
-> **TODO:** Review and set the correct path for the OpenTelemetry Java agent JAR file download location below before publishing!
-
 Download the OpenTelemetry Java agent to `services/order-service/` directory:
 
 ```bash
@@ -48,7 +46,7 @@ curl -L -o services/order-service/opentelemetry-javaagent.jar \
 
 ### **Step 2: Configure Grafana Cloud Credentials**
 
-For detailed setup instructions and advanced configuration options, see the [Grafana Cloud OTLP documentation](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#manual-opentelemetry-setup-for-advanced-users).
+The following steps will guide you through generating and configuring your Grafana credentials for this project. For further details, see the [Grafana Cloud OTLP setup guide](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#manual-opentelemetry-setup-for-advanced-users).
 
 1. **Create account in Grafana Cloud**
    - Go to [grafana.com](https://grafana.com) and sign up for a free account
@@ -56,9 +54,8 @@ For detailed setup instructions and advanced configuration options, see the [Gra
 
 2. **Create a new Stack**
    ![Create Stack](docs/grafana-1.png)
-   - After logging in, click "Create a stack" or "Add stack"
-   - Choose a stack name (e.g., "distributed-tracing-demo")
-   - Select your region and click "Create stack"
+   - Choose an instance name
+   - Select your region and click "Add stack"
 
 3. **Access OpenTelemetry Configuration**
    ![OpenTelemetry Configuration](docs/grafana-2.png)
@@ -67,12 +64,12 @@ For detailed setup instructions and advanced configuration options, see the [Gra
 
 4. **Generate API Token**
    ![Generate API Token](docs/grafana-3.png)
-   - Click "Generate a new API token" to create authentication credentials
+   - Click "Generate now" to create authentication credentials
    - This token will be used to authenticate your services with Grafana Cloud
 
 5. **Create and Name the Token**
    ![Create Token](docs/grafana-4.png)
-   - Give your token a descriptive name (e.g., "distributed-tracing-demo")
+   - Give your token a name
    - Click "Create token" to generate the credentials
 
 6. **Save Your Credentials**
@@ -83,7 +80,7 @@ For detailed setup instructions and advanced configuration options, see the [Gra
 
 7. **Create Environment Files**
    
-   **Important**: The `.env` files are not under source control for security reasons. You need to create them from the example files.
+   **Important**: The `.env` files are not under source control for security reasons. You need to create them from the `.env.example` files for both projects.
    
    ```bash
    # Copy example files to create your .env files
@@ -93,35 +90,31 @@ For detailed setup instructions and advanced configuration options, see the [Gra
 
 8. **Update Environment Variables**
    
-   Use the credentials you saved from Grafana Cloud to populate both `.env` files. The example files contain realistic but invalid configurations that you need to replace with your actual credentials:
+   Update only the following variables in each `.env` file with your Grafana Cloud credentials:
    
    **For Order Service** (`services/order-service/.env`):
-   ```bash
-   # Grafana Cloud OTLP endpoint (replace with your actual endpoint from step 6)
-   OTEL_EXPORTER_OTLP_ENDPOINT=https://your-instance.grafana.net:443
-   
-   # Grafana Cloud authentication header (replace with your actual token from step 6)
-   OTEL_EXPORTER_OTLP_HEADERS=authorization=Basic YOUR_ACTUAL_BASE64_ENCODED_CREDENTIALS
-   
-   # Service identification
-   OTEL_SERVICE_NAME=order-service
-   OTEL_RESOURCE_ATTRIBUTES=service.version=0.1.0,deployment.environment=demo
+   ```env
+   # Traces endpoint
+   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://otlp-gateway-prod-eu-central-0.grafana.net/otlp/v1/traces
+
+   # Logs endpoint
+   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://otlp-gateway-prod-eu-central-0.grafana.net/otlp/v1/logs
+
+   # Authentication header
+   OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic YOUR_BASE64_ENCODED_CREDENTIALS"
    ```
    
    **For Inventory Service** (`services/inventory-service/.env`):
-   ```bash
-   # Grafana Cloud OTLP endpoint (same as order-service)
-   OTEL_ENDPOINT=https://your-instance.grafana.net:443
-   
-   # Grafana Cloud authentication header (same as order-service)
-   OTEL_AUTH_HEADER=Basic YOUR_ACTUAL_BASE64_ENCODED_CREDENTIALS
-   
-   # Kafka configuration (already set in docker-compose)
-   KAFKA_BROKER=kafka:9093
-   ```
+   ```env
+   # Authentication header
+   OTEL_AUTH_HEADER=Basic YOUR_BASE64_ENCODED_CREDENTIALS
 
-> **Note:**
-> In this demo, both services export tracing and logging data *directly* to the Grafana Cloud OTLP endpoint. In a typical production setup, you would send telemetry to a local OpenTelemetry Collector, which then forwards data to Grafana Cloud. Direct export is used here for simplicity and ease of demonstration.
+   # Endpoint (used for both traces and logs)
+   OTEL_ENDPOINT=otlp-gateway-prod-eu-central-0.grafana.net
+   ```
+   
+   > **Note:**
+   > The order service requires separate endpoints for traces and logs, while the inventory service uses a single endpoint for both. Only the endpoints and authentication header need to be modified for Grafana Cloud integration.
 
 ### **Step 3: Run the Demo**
 
