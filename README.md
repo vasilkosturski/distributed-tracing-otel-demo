@@ -90,27 +90,27 @@ The following steps will guide you through generating and configuring your Grafa
 
 8. **Update Environment Variables**
    
-   Update only the following variables in each `.env` file with your Grafana Cloud credentials:
+   Update the following variables in each `.env` file with your Grafana Cloud credentials and endpoints:
    
    **For Order Service** (`services/order-service/.env`):
    ```env
-   # Traces endpoint
-   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://otlp-gateway-prod-eu-central-0.grafana.net/otlp/v1/traces
+   # Replace with your actual traces endpoint from Grafana Cloud
+   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://<your-grafana-instance>.grafana.net/otlp/v1/traces
 
-   # Logs endpoint
-   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://otlp-gateway-prod-eu-central-0.grafana.net/otlp/v1/logs
+   # Replace with your actual logs endpoint from Grafana Cloud
+   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://<your-grafana-instance>.grafana.net/otlp/v1/logs
 
-   # Authentication header
+   # Replace with your actual authentication header from Grafana Cloud
    OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic YOUR_BASE64_ENCODED_CREDENTIALS"
    ```
    
    **For Inventory Service** (`services/inventory-service/.env`):
    ```env
-   # Authentication header
+   # Replace with your actual authentication header from Grafana Cloud
    OTEL_AUTH_HEADER=Basic YOUR_BASE64_ENCODED_CREDENTIALS
 
-   # Endpoint (used for both traces and logs)
-   OTEL_ENDPOINT=otlp-gateway-prod-eu-central-0.grafana.net
+   # Replace with your actual endpoint from Grafana Cloud (used for both traces and logs)
+   OTEL_ENDPOINT=<your-grafana-instance>.grafana.net
    ```
    
    > **Note:**
@@ -125,7 +125,7 @@ docker compose -f docker-compose.full.yml up -d --build
 
 ### **Step 4: Test It!**
 
-Create a test request:
+Create a test request by posting an order:
 
 ```bash
 curl -X POST http://localhost:8080/orders \
@@ -144,11 +144,11 @@ curl -X POST http://localhost:8080/orders \
    
    ![Locate the Traces section in Grafana Cloud](docs/grafana-trace-1.png)
 
-3. Click on a trace to view its details:
+3. Click on the latest trace to view its details:
    
    ![View a single distributed trace](docs/grafana-trace-2.png)
 
-4. Click on a specific span within the trace to see the correlated logs:
+4. You can also see the correlated logs for the span:
    
    ![See logs for a specific span in the trace](docs/grafana-trace-3.png)
 
@@ -165,17 +165,26 @@ curl -X POST http://localhost:8080/orders \
 ## 🔍 **Services Overview**
 
 ### **Order Service (Java/Spring Boot)**
-- **Purpose**: Handles HTTP requests and publishes events to Kafka
-- **Instrumentation**: 
+- **Purpose:**  
+  - Handles HTTP requests to create new orders.
+  - Publishes `OrderCreated` events to Kafka after saving orders to the database.
+  - Consumes `InventoryReserved` events from Kafka and updates the corresponding order's status in the database.
+- **Instrumentation:**  
   - **Auto-instrumentation** via OpenTelemetry Java Agent (HTTP, Database, Kafka operations)
   - **Manual spans** for business logic and custom operations
-- **Communication**: Publishes order events to Kafka topics
+- **Communication:**  
+  - Publishes order events to Kafka topics
+  - Listens for inventory events from Kafka and updates orders accordingly
 
 ### **Inventory Service (Go)**
-- **Purpose**: Consumes Kafka events and processes inventory updates
-- **Instrumentation**: OpenTelemetry Go SDK with manual instrumentation
-- **Communication**: Subscribes to Kafka topics for order events
-- **Note**: This service does not expose an HTTP API; it is a pure Kafka consumer/producer.
+- **Purpose:**  
+  - Consumes `OrderCreated` events from Kafka to process inventory reservations.
+  - Publishes `InventoryReserved` events to Kafka after successfully reserving inventory.
+- **Instrumentation:**  
+  - Uses the OpenTelemetry Go SDK with manual instrumentation for tracing and logging.
+- **Communication:**  
+  - Listens for order events from Kafka and processes inventory updates.
+  - Publishes inventory events to Kafka topics.
 
 ## 🎯 **Instrumentation Strategy**
 
@@ -194,36 +203,41 @@ Custom spans for business logic:
 - Business event publishing
 - Custom attributes and context
 
-### **Combined Approach**
+### **Example: Combining Auto-Instrumentation and Manual Instrumentation**
+
+OpenTelemetry's Java agent automatically instruments common frameworks (HTTP, JDBC, Kafka, etc.), creating spans for technical operations. You can also use the OpenTelemetry SDK in your code to create custom spans for business logic. Both approaches use the same tracer and context, so all spans are linked into a single distributed trace.
+
+**How it works in this project:**
+- The Java agent (enabled via `-javaagent:opentelemetry-javaagent.jar`) auto-instruments HTTP endpoints, database queries, and Kafka operations in the Order Service.
+- Manual instrumentation is used in business logic to create custom spans, add attributes, and record exceptions.
+
+**Example from the project (OrderService.java):**
+
 ```java
-// Auto: HTTP span created by Java agent
-@PostMapping("/orders")
-public ResponseEntity<?> createOrder(@RequestBody CreateOrderRequest request) {
-    
-    // Manual: Order creation span
-    Span createOrderSpan = tracer.spanBuilder("create_order")
-        .setAttribute("customer.id", request.getCustomerId())
-        .startSpan();
-    
-    try (var scope = createOrderSpan.makeCurrent()) {
-        // Auto: Database span created by Java agent
-        Order order = orderService.createOrder(request);
-        
-        // Manual: Custom event publishing span
-        Span eventSpan = tracer.spanBuilder("publish-order-event")
-            .setAttribute("order.id", order.getId())
-            .startSpan();
-        
-        try (var eventScope = eventSpan.makeCurrent()) {
-            // Auto: Kafka producer span created by Java agent
-            kafkaTemplate.send("order-created", event);
-        } finally {
-            eventSpan.end();
-        }
-        
-        return ResponseEntity.ok(order);
-    } finally {
-        createOrderSpan.end();
-    }
+// This method is called within an auto-instrumented HTTP span created by the Java agent for the /orders endpoint
+
+// Manual span for business logic (child of the auto-instrumented HTTP span)
+Span span = tracer.spanBuilder("create_order").startSpan();
+try (Scope ignored = span.makeCurrent()) {
+    // Custom attributes for business logic
+    span.setAttribute("order.id", orderId.toString());
+    // Auto-instrumented: JDBC span for the following query
+    jdbcTemplate.update("INSERT INTO orders ...");
+    // Auto-instrumented: Kafka span for publishing event
+    kafkaTemplate.send("OrderCreated", event).get();
+} catch (Exception e) {
+    span.setStatus(StatusCode.ERROR, "Order creation failed");
+    span.recordException(e);
+    throw e;
+} finally {
+    span.end();
 }
 ```
+
+- The `tracer` used here is the same one managed by the OpenTelemetry SDK and recognized by the agent.
+- All spans (auto and manual) are part of the same trace, and context is propagated automatically.
+
+**SDK and Agent Integration:**
+- The agent injects itself into the JVM and instruments supported libraries.
+- The SDK (configured in your code) allows you to create custom spans and enrich traces with business-specific data.
+- Context propagation ensures that all spans—whether created by the agent or manually—are linked together.
