@@ -241,3 +241,11 @@ try (Scope ignored = span.makeCurrent()) {
 - The agent injects itself into the JVM and instruments supported libraries.
 - The SDK (configured in your code) allows you to create custom spans and enrich traces with business-specific data.
 - Context propagation ensures that all spans—whether created by the agent or manually—are linked together.
+
+## 📚 Resources
+
+- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
+- [Grafana Cloud Documentation](https://grafana.com/docs/grafana-cloud/)
+- [Spring Boot Documentation](https://spring.io/projects/spring-boot)
+- [Go Documentation](https://golang.org/doc/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
