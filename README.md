@@ -25,7 +25,7 @@ Below is a brief description of each step in the workflow:
 4. The Inventory Service publishes an inventory reserved event to Kafka.  
 5. The Order Service updates the order status based on the inventory event.
 
-Throughout this workflow, tracking data (spans) is sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
+Throughout this workflow, tracking data (spans) and logs are sent to Grafana Cloud: the Java service sends both automatically captured spans and manual spans created through the SDK, while the Inventory Service sends only manual spans; all tracking data is linked via the trace id to provide a complete view of each request.
 
 **Example distributed trace in Grafana Cloud:**  
 ![Grafana Cloud Trace Example](docs/grafana-trace-2.png)
@@ -41,8 +41,6 @@ Download the OpenTelemetry Java agent to `services/order-service/` directory:
 curl -L -o services/order-service/opentelemetry-javaagent.jar \
   https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
-
-**Note:** The JAR file must be placed in `services/order-service/` directory.
 
 ### **Step 2: Configure Grafana Cloud Credentials**
 
@@ -148,7 +146,7 @@ curl -X POST http://localhost:8080/orders \
    
    ![View a single distributed trace](docs/grafana-trace-2.png)
 
-4. You can also see the correlated logs for the span:
+4. You can also see the correlated logs for a selected span:
    
    ![See logs for a specific span in the trace](docs/grafana-trace-3.png)
 
@@ -205,11 +203,7 @@ Custom spans for business logic:
 
 ### **Example: Combining Auto-Instrumentation and Manual Instrumentation**
 
-OpenTelemetry's Java agent automatically instruments common frameworks (HTTP, JDBC, Kafka, etc.), creating spans for technical operations. You can also use the OpenTelemetry SDK in your code to create custom spans for business logic. Both approaches use the same tracer and context, so all spans are linked into a single distributed trace.
-
-**How it works in this project:**
-- The Java agent (enabled via `-javaagent:opentelemetry-javaagent.jar`) auto-instruments HTTP endpoints, database queries, and Kafka operations in the Order Service.
-- Manual instrumentation is used in business logic to create custom spans, add attributes, and record exceptions.
+OpenTelemetry's Java agent automatically instruments common frameworks. You can also use the OpenTelemetry SDK in your code to create custom spans for business logic. Both approaches use the same tracer and context, so all spans are linked into a single distributed trace.
 
 **Example from the project (OrderService.java):**
 
@@ -236,11 +230,6 @@ try (Scope ignored = span.makeCurrent()) {
 
 - The `tracer` used here is the same one managed by the OpenTelemetry SDK and recognized by the agent.
 - All spans (auto and manual) are part of the same trace, and context is propagated automatically.
-
-**SDK and Agent Integration:**
-- The agent injects itself into the JVM and instruments supported libraries.
-- The SDK (configured in your code) allows you to create custom spans and enrich traces with business-specific data.
-- Context propagation ensures that all spans—whether created by the agent or manually—are linked together.
 
 ## 📚 Resources
 
